@@ -1,26 +1,43 @@
+// src/pages/artworks/ArtworkDetail.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getArtworkById } from '../../services/mockArtworks.js'
+import { useSelector } from 'react-redux'
+import {
+  getArtworkById,
+  getArtworkRating,
+  rateArtwork
+} from '../../services/mockArtworks.js'
 
 export default function ArtworkDetail(){
   const { id } = useParams()
   const navigate = useNavigate()
+  const user = useSelector(s => s.auth.user)
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [idx, setIdx] = useState(0) // imagen seleccionada
 
+  // rating agregado
+  const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
+  const canRate = !!user && user.role === 'buyer'
+
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    getArtworkById(id).then(item=>{
+    Promise.all([
+      getArtworkById(id),
+      getArtworkRating(id, user?.id)
+    ]).then(([item, r])=>{
       if(!alive) return
-      setData(item); setLoading(false)
+      setData(item)
+      setRating(r)
+      setLoading(false)
     }).catch(e=>{
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
     })
     return ()=>{ alive = false }
-  }, [id])
+  }, [id, user?.id])
 
   const soldPct = useMemo(()=>{
     if(!data) return 0
@@ -82,7 +99,11 @@ export default function ArtworkDetail(){
                   <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
                   <p className="text-slate-600">{data.artist}</p>
                   <div className="mt-1 flex items-center gap-1 text-amber-500">
-                    <Star className="h-4 w-4"/><span className="text-sm font-semibold">{data.rating}</span>
+                    <Star className="h-4 w-4"/>
+                    <span className="text-sm font-semibold">
+                      { (rating.avg || data.rating || 0).toFixed ? (rating.avg || data.rating || 0).toFixed(1) : (rating.avg || data.rating || 0) }
+                    </span>
+                    <span className="text-xs text-slate-500">({rating.count} valoraciones)</span>
                   </div>
                 </div>
               </div>
@@ -113,6 +134,32 @@ export default function ArtworkDetail(){
                 ))}
               </div>
 
+              {/* ----- Bloque de valoración ----- */}
+              <div className="mt-2 border-t pt-3">
+                {canRate ? (
+                  <div>
+                    <div className="text-xs text-slate-600 mb-1">Tu valoración</div>
+                    <StarSelector
+                      value={rating.my}
+                      onChange={async (v)=>{
+                        const updated = await rateArtwork(data.id, user.id, v)
+                        setData(updated)
+                        const r = await getArtworkRating(data.id, user.id)
+                        setRating(r)
+                      }}
+                    />
+                    {!!rating.my && (
+                      <div className="text-xs text-slate-500 mt-1">Gracias por valorar esta obra.</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">
+                    Iniciá sesión como comprador para valorar esta obra.
+                  </div>
+                )}
+              </div>
+              {/* -------------------------------- */}
+
               <div className="flex gap-2 pt-2">
                 <button className="btn btn-primary flex-1" onClick={()=>alert('(Demo) Comprar fracción')}>
                   Comprar fracción
@@ -134,7 +181,7 @@ export default function ArtworkDetail(){
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
-              <li><strong>Rating:</strong> {data.rating}</li>
+              <li><strong>Rating:</strong> {rating.avg || data.rating || 0}</li>
             </ul>
             <div className="mt-4">
               <button onClick={()=>navigate('/comprar')} className="btn btn-outline w-full">Volver al marketplace</button>
@@ -179,3 +226,38 @@ function Share(props){ return (<svg viewBox="0 0 24 24" fill="none" stroke="curr
   <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/>
 </svg>)}
 function fmt(n){ return n.toLocaleString('es-AR') }
+
+/* --- selector de estrellas --- */
+function StarSelector({ value = 0, onChange }){
+  const [hover, setHover] = useState(0)
+  const active = hover || value
+  return (
+    <div className="inline-flex items-center gap-1">
+      {[1,2,3,4,5].map(v=>(
+        <button
+          key={v}
+          type="button"
+          className="p-0.5"
+          onMouseEnter={()=>setHover(v)}
+          onMouseLeave={()=>setHover(0)}
+          onClick={()=>onChange?.(v)}
+          aria-label={`Valorar con ${v} estrellas`}
+          title={`${v} estrella${v>1?'s':''}`}
+        >
+          <StarIcon className={`h-6 w-6 ${v <= active ? 'text-yellow-500' : 'text-slate-300'}`} filled={v <= active}/>
+        </button>
+      ))}
+    </div>
+  )
+}
+function StarIcon({ className = '', filled = true }){
+  return filled ? (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
+    </svg>
+  )
+}

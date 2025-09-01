@@ -71,6 +71,24 @@ const GALLERY_FALLBACK = [
   'https://images.unsplash.com/photo-1465311440653-ba9b1d9b0f5b?q=80&w=1600&auto=format&fit=crop',
 ];
 
+/* ---------------- Rating helpers ---------------- */
+function calcAvg(by) {
+  const vals = Object.values(by || {});
+  if (!vals.length) return 0;
+  return Math.round((vals.reduce((a, c) => a + c, 0) / vals.length) * 10) / 10;
+}
+function ensureRatings(obj) {
+  if (!obj.ratings) {
+    obj.ratings = { by: {}, count: 0, avg: Number(obj.rating || 0) || 0 };
+  }
+  obj.rating = obj.ratings.avg;
+  return obj;
+}
+function saveList(list) {
+  localStorage.setItem(KEY, JSON.stringify(list));
+}
+/* ------------------------------------------------ */
+
 function withDefaults(item) {
   const description =
     item.description?.trim() ||
@@ -79,6 +97,8 @@ function withDefaults(item) {
     Array.isArray(item.gallery) && item.gallery.length
       ? item.gallery
       : [item.image, ...GALLERY_FALLBACK.slice(0, 2)];
+
+  ensureRatings(item);
   return { ...item, description, gallery };
 }
 
@@ -106,7 +126,7 @@ export async function listArtworks({ q = '', sort = 'relevance' } = {}) {
   if (sort === 'price-asc') items.sort((a, b) => a.price - b.price);
   else if (sort === 'price-desc') items.sort((a, b) => b.price - a.price);
   else if (sort === 'newest') items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  else items.sort((a, b) => b.rating - a.rating); // relevance
+  else items.sort((a, b) => (b.rating || 0) - (a.rating || 0)); // relevance
 
   return items.map(withDefaults);
 }
@@ -149,6 +169,7 @@ export async function createArtwork({
     image: image || GALLERY_FALLBACK[0],
     tags: tags.length ? tags : ['Mixta'],
     rating: 0,
+    ratings: { by: {}, count: 0, avg: 0 },
     createdAt: new Date().toISOString().slice(0, 10),
     gallery:
       Array.isArray(gallery) && gallery.length
@@ -157,8 +178,8 @@ export async function createArtwork({
   };
 
   list.unshift(item);
-  localStorage.setItem(KEY, JSON.stringify(list));
-  return item;
+  saveList(list);
+  return withDefaults(item);
 }
 
 // --- actualizar obra ---
@@ -173,8 +194,8 @@ export async function updateArtwork(id, updates = {}) {
   const prev = list[idx];
   // preservar fracciones vendidas
   const sold = (prev.fractionsTotal || 0) - (prev.fractionsLeft || 0);
-  const nextTotal = Number(updates.fractionsTotal ?? prev.fractionsTotal) || 0
-  const nextLeft = Math.max(0, nextTotal - sold)
+  const nextTotal = Number(updates.fractionsTotal ?? prev.fractionsTotal) || 0;
+  const nextLeft = Math.max(0, nextTotal - sold);
 
   const merged = {
     ...prev,
@@ -191,8 +212,9 @@ export async function updateArtwork(id, updates = {}) {
         : [prev.image, ...GALLERY_FALLBACK.slice(0, 2)],
   };
 
+  ensureRatings(merged); // mantenemos/normalizamos ratings
   list[idx] = merged;
-  localStorage.setItem(KEY, JSON.stringify(list));
+  saveList(list);
   return withDefaults(merged);
 }
 
@@ -203,4 +225,42 @@ export async function getArtworkById(id) {
   const found = list.find((i) => i.id === id);
   if (!found) throw new Error('Obra no encontrada');
   return withDefaults(found);
+}
+
+/* ---------------- Rating API pública ---------------- */
+
+/** Devuelve promedio, cantidad y (si pasa userId) la valoración propia */
+export async function getArtworkRating(artworkId, userId) {
+  seedIfEmpty();
+  await sleep(120);
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const it = list.find(i => i.id === artworkId);
+  if (!it) throw new Error('Obra no encontrada');
+  ensureRatings(it);
+  const my = userId ? Number(it.ratings.by[userId] || 0) : 0;
+  return { avg: it.ratings.avg, count: it.ratings.count, my };
+}
+
+/** Graba/actualiza la valoración del usuario y recalcula promedio */
+export async function rateArtwork(artworkId, userId, value) {
+  seedIfEmpty();
+  await sleep(100);
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const idx = list.findIndex(i => i.id === artworkId);
+  if (idx === -1) throw new Error('Obra no encontrada');
+
+  const it = list[idx];
+  ensureRatings(it);
+
+  const v = Math.min(5, Math.max(1, Number(value) || 0));
+  if (!v || !userId) return withDefaults(it);
+
+  it.ratings.by[userId] = v;
+  it.ratings.count = Object.keys(it.ratings.by).length;
+  it.ratings.avg = calcAvg(it.ratings.by);
+  it.rating = it.ratings.avg;
+
+  list[idx] = it;
+  saveList(list);
+  return withDefaults(it);
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listArtworks } from '../../services/mockArtworks.js'
 import ArtworkCard from '../../components/artworks/ArtworkCard.jsx'
+import RecommendedRow from '../../components/artworks/RecommendedRow.jsx'
 
 export default function BuyerDashboard(){
   const [items, setItems] = useState([])
@@ -43,6 +44,11 @@ export default function BuyerDashboard(){
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
+      <div className='mt-8'>
+        {/* NUEVO: Recomendados para el comprador */}
+      <RecommendedRow />
+      </div>
+      
       {/* HERO */}
       <div className="section-frame pt-10 pb-6">
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
@@ -98,6 +104,7 @@ export default function BuyerDashboard(){
           </div>
         </div>
       </div>
+
 
       {/* GRID */}
       <div className="section-frame pb-16">
