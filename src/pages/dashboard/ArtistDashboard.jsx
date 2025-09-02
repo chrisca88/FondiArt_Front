@@ -20,11 +20,17 @@ export default function ArtistDashboard() {
   const [price, setPrice] = useState(2500)
   const [fractionFrom, setFractionFrom] = useState(30)
   const [fractionsTotal, setFractionsTotal] = useState(100)
-  const [gallery, setGallery] = useState(['https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600&auto=format&fit=crop'])
+  const [gallery, setGallery] = useState([
+    'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600&auto=format&fit=crop',
+  ])
   const [tags, setTags] = useState(new Set(['Mixta']))
 
   const [loading, setLoading] = useState(!!editId)
   const [saving, setSaving] = useState(false)
+
+  // modal de éxito al actualizar
+  const [successOpen, setSuccessOpen] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
 
   // imagen principal = primer elemento de la galería
   const mainImage = useMemo(() => gallery[0], [gallery])
@@ -46,7 +52,6 @@ export default function ArtistDashboard() {
         setGallery(Array.isArray(it.gallery) && it.gallery.length ? it.gallery : [it.image])
         setTags(new Set(it.tags || []))
       } catch (e) {
-        // si no existe, volvé a crear
         navigate('/publicar', { replace: true })
       } finally {
         if (alive) setLoading(false)
@@ -67,7 +72,6 @@ export default function ArtistDashboard() {
   const removeImageAt = (idx) => {
     setGallery((g) => {
       const next = g.filter((_, i) => i !== idx)
-      // nunca dejes la galería vacía
       return next.length ? next : [uFallback(0)]
     })
   }
@@ -107,7 +111,10 @@ export default function ArtistDashboard() {
     try {
       if (editId) {
         await updateArtwork(editId, payload)
-        // nos quedamos en la misma página
+        // POP-UP de éxito + redirección a /mis-obras
+        setSuccessMsg('¡La obra se actualizó correctamente!')
+        setSuccessOpen(true)
+        setTimeout(() => navigate('/mis-obras', { replace: true }), 1300)
       } else {
         const created = await createArtwork(payload)
         // redirigimos a edición para habilitar “Ver obra”
@@ -157,7 +164,6 @@ export default function ArtistDashboard() {
                 <div className="font-semibold">${Number(price || 0).toLocaleString('es-AR')}</div>
               </div>
 
-              {/* sin rating en la preview de publicación */}
               <div className="mt-4">
                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm">
                   {Array.from(tags).join(' • ') || 'Mixta'}
@@ -348,7 +354,33 @@ export default function ArtistDashboard() {
           </form>
         </div>
       </div>
+
+      {/* MODAL de éxito al ACTUALIZAR */}
+      {successOpen && (
+        <SuccessModal
+          message={successMsg}
+          onClose={() => { setSuccessOpen(false); navigate('/mis-obras', { replace: true }) }}
+        />
+      )}
     </section>
+  )
+}
+
+/* ----- Modal simple de éxito ----- */
+function SuccessModal({ message, onClose }){
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
+        <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-green-100 text-green-600">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <h3 className="text-lg font-bold">¡Listo!</h3>
+        <p className="mt-1 text-slate-700">{message || 'Operación realizada correctamente.'}</p>
+        <button onClick={onClose} className="btn btn-primary mt-5 w-full">Ir a mis obras</button>
+      </div>
+    </div>
   )
 }
 

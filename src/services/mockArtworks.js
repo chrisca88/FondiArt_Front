@@ -98,8 +98,13 @@ function withDefaults(item) {
       ? item.gallery
       : [item.image, ...GALLERY_FALLBACK.slice(0, 2)];
 
+  // ratings
   ensureRatings(item);
-  return { ...item, description, gallery };
+
+  // status: por defecto "approved" si no existe (para seed/obras viejas)
+  const status = item.status || 'approved';
+
+  return { ...item, description, gallery, status };
 }
 
 function seedIfEmpty() {
@@ -112,6 +117,9 @@ export async function listArtworks({ q = '', sort = 'relevance' } = {}) {
   seedIfEmpty();
   await sleep();
   let items = JSON.parse(localStorage.getItem(KEY) || '[]');
+
+  // SOLO obras aprobadas en el marketplace
+  items = items.filter((i) => (i.status || 'approved') === 'approved');
 
   if (q) {
     const s = q.toLowerCase();
@@ -175,6 +183,7 @@ export async function createArtwork({
       Array.isArray(gallery) && gallery.length
         ? gallery
         : [image || GALLERY_FALLBACK[0], ...GALLERY_FALLBACK.slice(1, 3)],
+    status: 'pending', // NUEVO: al publicar queda pendiente
   };
 
   list.unshift(item);
@@ -210,6 +219,7 @@ export async function updateArtwork(id, updates = {}) {
         : prev.gallery?.length
         ? prev.gallery
         : [prev.image, ...GALLERY_FALLBACK.slice(0, 2)],
+    status: updates.status ?? prev.status ?? 'approved', // preservar estado
   };
 
   ensureRatings(merged); // mantenemos/normalizamos ratings
@@ -263,4 +273,9 @@ export async function rateArtwork(artworkId, userId, value) {
   list[idx] = it;
   saveList(list);
   return withDefaults(it);
+}
+
+/* --------- Helper opcional para aprobar ---------- */
+export async function approveArtwork(id) {
+  return updateArtwork(id, { status: 'approved' });
 }
