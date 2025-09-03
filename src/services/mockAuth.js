@@ -1,65 +1,67 @@
 // src/services/mockAuth.js
-const USERS_KEY = 'mock_users';
-const TOKEN_KEY = 'token';
-const USER_KEY  = 'user';
+const KEY = 'mock_users_v2';
+const sleep = (ms = 200) => new Promise(r => setTimeout(r, ms));
 
-const sleep = (ms=500) => new Promise(r => setTimeout(r, ms));
+const SEED_USERS = [
+  { id: 'u-buyer',  name: 'Cliente Demo',  email: 'buyer@demo.com',  role: 'buyer',  password: 'buyer'  },
+  { id: 'u-artist', name: 'Artista Demo',  email: 'artist@demo.com', role: 'artist', password: 'artist' },
+  { id: 'u-admin',  name: 'Admin Demo',    email: 'admin@demo.com',  role: 'admin',  password: 'admin'  },
+];
 
-function getUsers(){
-  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
-  catch { return []; }
-}
-function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
-
-export async function register({ name, email, password, role='buyer' }){
-  await sleep();
-  const users = getUsers();
-  if (users.some(u => u.email === email)) {
-    throw new Error('El email ya está registrado');
+function seedIfEmpty() {
+  if (!localStorage.getItem(KEY)) {
+    localStorage.setItem(KEY, JSON.stringify(SEED_USERS));
   }
-  const user = { id: crypto.randomUUID?.() || String(Date.now()), name, email, role };
-  users.push({ ...user, password });
-  saveUsers(users);
-  const token = `mock.${btoa(email)}.${Date.now()}`;
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+function saveSession(user) {
+  const token = `mock.${user.role}.${Date.now()}`;
+  localStorage.setItem('token', token);
+  localStorage.setItem('user', JSON.stringify(user));
   return { token, user };
 }
 
-export async function login({ email, password }){
+export async function register({ name, email, password, role = 'buyer' }) {
+  seedIfEmpty();
   await sleep();
-  const users = getUsers();
-  const row = users.find(u => u.email === email && u.password === password);
-  if (!row) throw new Error('Credenciales inválidas');
-  const { password: _pw, ...user } = row;
-  const token = `mock.${btoa(email)}.${Date.now()}`;
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  return { token, user };
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  if (list.some(u => u.email === email)) throw new Error('El email ya está registrado');
+
+  const user = { id: 'u' + Date.now(), name, email, role, password };
+  list.push(user);
+  localStorage.setItem(KEY, JSON.stringify(list));
+  return saveSession(user);
 }
 
-export async function loginDemo(role='buyer'){
-  await sleep(350);
-  const email = role === 'artist' ? 'artist@demo.local' : 'buyer@demo.local';
-  const name  = role === 'artist' ? 'Artista Demo' : 'Comprador Demo';
-  const password = 'demo';
-  let users = getUsers();
-  if (!users.some(u => u.email === email)) {
-    users.push({ id: String(Date.now()), name, email, password, role });
-    saveUsers(users);
-  }
-  return login({ email, password });
+export async function login({ email, password }) {
+  seedIfEmpty();
+  await sleep();
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const user = list.find(u => u.email === email && u.password === password);
+  if (!user) throw new Error('Credenciales inválidas');
+  return saveSession(user);
 }
 
-export async function getCurrent(){
+/** Login de demo por rol: 'buyer' | 'artist' | 'admin' */
+export async function loginDemo(role = 'buyer') {
+  seedIfEmpty();
   await sleep(150);
-  const token = localStorage.getItem(TOKEN_KEY);
-  const user  = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
-  if (!token || !user) throw new Error('No autenticado');
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const user = list.find(u => u.role === role);
+  if (!user) throw new Error('Demo no disponible para ese rol');
+  return saveSession(user);
+}
+
+export async function getCurrent() {
+  seedIfEmpty();
+  await sleep(80);
+  const token = localStorage.getItem('token');
+  const user  = JSON.parse(localStorage.getItem('user') || 'null');
+  if (!token || !user) throw new Error('No hay sesión');
   return { token, user };
 }
 
-export function logout(){
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+export function logout() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
 }

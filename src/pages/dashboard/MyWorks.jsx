@@ -29,7 +29,7 @@ export default function MyWorks(){
             <div>
               <p className="eyebrow">Artista</p>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mis obras</h1>
-              <p className="lead mt-2 max-w-2xl">Gestioná las obras que publicaste y consultá sus estadísticas.</p>
+              <p className="lead mt-2 max-w-2xl">Gestioná tus publicaciones, estado y estadísticas.</p>
             </div>
             <Link to="/publicar" className="btn btn-primary self-start">Publicar obra</Link>
           </div>
@@ -53,7 +53,6 @@ export default function MyWorks(){
                 key={it.id}
                 item={it}
                 onStats={()=>navigate(`/obra/${it.id}/estadisticas`)}
-                onEdit={()=>navigate(`/publicar?edit=${it.id}`)}
               />
             ))}
           </div>
@@ -63,38 +62,28 @@ export default function MyWorks(){
   )
 }
 
-function StatusBadge({ status }){
-  const approved = status === 'approved'
-  return (
-    <span
-      className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1
-        ${approved
-          ? 'bg-green-50 text-green-700 ring-green-200'
-          : 'bg-rose-50 text-rose-700 ring-rose-200'
-        }`}
-      title={approved ? 'Aprobada: visible en el marketplace' : 'Pendiente de aprobación'}
-    >
-      {approved ? 'Aprobada' : 'Pendiente'}
-    </span>
-  )
-}
-
-function OwnerArtworkCard({ item, onStats, onEdit }){
+function OwnerArtworkCard({ item, onStats }){
   const sold = item.fractionsTotal - item.fractionsLeft
-  const pct = Math.round((sold / (item.fractionsTotal || 1)) * 100)
+  const pct = Math.round(sold / (item.fractionsTotal || 1) * 100)
+  const pending = item.status === 'pending'
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70 flex flex-col">
       <img src={item.image} alt={item.title} className="aspect-[4/3] w-full object-cover"/>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="font-bold truncate">{item.title}</div>
-          <StatusBadge status={item.status}/>
+      <div className="p-4 space-y-2 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="font-bold">{item.title}</div>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs shrink-0
+              ${pending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}
+            title={pending ? 'Pendiente de aprobación' : 'Aprobada'}
+          >
+            {pending ? 'Pendiente' : 'Aprobada'}
+          </span>
         </div>
+        <div className="text-sm text-slate-600">{item.createdAt}</div>
 
-        <div className="text-sm text-slate-600 mt-1">{item.createdAt}</div>
-
-        <div className="mt-3">
+        <div className="mt-2">
           <div className="flex justify-between text-xs text-slate-600 mb-1">
             <span>Vendidas</span><span>{sold}/{item.fractionsTotal} ({pct}%)</span>
           </div>
@@ -103,9 +92,24 @@ function OwnerArtworkCard({ item, onStats, onEdit }){
           </div>
         </div>
 
-        <div className="flex gap-2 pt-3">
-          <button onClick={onEdit} className="btn btn-outline flex-1">Editar</button>
-          <button onClick={onStats} className="btn btn-primary">Ver estadísticas</button>
+        <div className="text-xs">
+          <Link to={`/obra/${item.id}`} className="text-indigo-600 hover:underline">
+            Ver obra
+          </Link>
+          {pending && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Link
+            to={`/publicar?edit=${item.id}`}
+            className="btn btn-outline flex-1 rounded-xl"
+            title="Editar publicación"
+          >
+            Editar publicación
+          </Link>
+          <button onClick={onStats} className="btn btn-primary rounded-xl">
+            Ver estadísticas
+          </button>
         </div>
       </div>
     </div>
