@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function ArtworkCard({ item, onView }) {
+export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }) {
   const [loaded, setLoaded] = useState(false)
   const FALLBACK =
     'https://images.unsplash.com/photo-1549880338-65ddcdfd017b?q=80&w=1600&auto=format&fit=crop'
@@ -11,11 +11,8 @@ export default function ArtworkCard({ item, onView }) {
 
   return (
     <article className="group overflow-hidden rounded-3xl card-surface hover:shadow-2xl transition">
-      {/* Imagen */}
       <div className="relative">
-        {/* skeleton */}
         <div className={`aspect-[4/3] w-full bg-slate-200/70 ${loaded ? 'hidden' : 'animate-pulse'}`} />
-
         <img
           src={item.image}
           alt={item.title}
@@ -42,19 +39,21 @@ export default function ArtworkCard({ item, onView }) {
             </span>
           )}
         </div>
+
         {/* like */}
         <button
-          className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-700 border border-slate-200 hover:bg-white"
-          title="Agregar a favoritos"
+          onClick={(e)=>{ e.stopPropagation(); e.preventDefault(); onToggleFav?.() }}
+          className={`absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full border transition
+            ${isFav ? 'bg-white text-red-600 border-red-200'
+                    : 'bg-white/90 text-slate-700 border-slate-200 hover:bg-white'}`}
+          title={isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
         >
-          <HeartIcon className="h-4 w-4" />
+          <HeartIcon className="h-4 w-4" filled={isFav} />
         </button>
 
-        {/* overlay */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition" />
       </div>
 
-      {/* contenido */}
       <div className="p-4">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-full bg-indigo-600 text-white text-xs font-bold">
@@ -110,10 +109,17 @@ export default function ArtworkCard({ item, onView }) {
 
 function fmt(n) { return n.toLocaleString('es-AR') }
 
-/* Icons */
-function HeartIcon(props){ return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/>
-</svg>)}
+function HeartIcon({ className='', filled=false }){
+  return filled ? (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41.81 4.5 2.09C12.09 4.81 13.76 4 15.5 4 18 4 20 6 20 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/>
+    </svg>
+  )
+}
 function StarIcon(props){ return (<svg viewBox="0 0 24 24" fill="currentColor" {...props}>
   <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
 </svg>)}

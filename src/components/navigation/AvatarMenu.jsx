@@ -1,3 +1,4 @@
+// src/components/navigation/AvatarMenu.jsx
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useDispatch } from 'react-redux'
@@ -25,6 +26,8 @@ export default function AvatarMenu({ user }) {
     dispatch(logout())
     navigate('/')
   }
+
+  const isArtist = user?.role === 'artist'
 
   return (
     <div className="relative" ref={ref}>
@@ -58,15 +61,19 @@ export default function AvatarMenu({ user }) {
           <div className="h-px bg-slate-200/70" />
 
           <nav className="py-1 text-sm">
-            <Link className="block px-4 py-2 hover:bg-slate-50" to="/dashboard" onClick={()=>setOpen(false)}>
-              Dashboard
-            </Link>
+            {/* Ocultar Dashboard para artistas */}
+            {!isArtist && (
+              <Link className="block px-4 py-2 hover:bg-slate-50" to="/dashboard" onClick={()=>setOpen(false)}>
+                Dashboard
+              </Link>
+            )}
+
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/cuenta" onClick={()=>setOpen(false)}>
               Mi perfil
             </Link>
 
             {/* SOLO ARTISTA */}
-            {user?.role === 'artist' && (
+            {isArtist && (
               <>
                 <Link className="block px-4 py-2 hover:bg-slate-50" to="/mis-obras" onClick={()=>setOpen(false)}>
                   Mis obras

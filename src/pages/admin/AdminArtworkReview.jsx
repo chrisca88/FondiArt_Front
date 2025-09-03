@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { getArtworkById, setArtworkStatus } from '../../services/mockArtworks.js'
+import { getArtworkById, updateArtwork } from '../../services/mockArtworks.js'
+
+const FRACTIONS_TOTAL = 100000
 
 export default function AdminArtworkReview(){
   const { id } = useParams()
@@ -15,12 +17,25 @@ export default function AdminArtworkReview(){
   const [saving, setSaving] = useState(false)
   const [idx, setIdx] = useState(0)
 
+  // precio base editable por el admin
+  const [basePrice, setBasePrice] = useState(0)
+  // fecha de subasta
+  const [auctionDate, setAuctionDate] = useState('')
+  const todayStr = useMemo(()=> new Date().toISOString().slice(0,10), [])
+
+  // MODAL éxito
+  const [successOpen, setSuccessOpen] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
+
   useEffect(()=>{
     let alive = true
     setLoading(true)
     getArtworkById(id).then(item=>{
       if(!alive) return
-      setData(item); setLoading(false)
+      setData(item)
+      setBasePrice(Number(item.price || 0))
+      setAuctionDate(item.auctionDate || '')
+      setLoading(false)
     }).catch(e=>{
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
     })
@@ -28,6 +43,7 @@ export default function AdminArtworkReview(){
   }, [id])
 
   const isPending = useMemo(()=> data && (data.status === 'pending'), [data])
+  const unit = useMemo(() => Number(((Number(basePrice)||0) / FRACTIONS_TOTAL).toFixed(2)), [basePrice])
 
   if (user?.role !== 'admin'){
     return (
@@ -52,13 +68,28 @@ export default function AdminArtworkReview(){
   )
   if (!data) return null
 
-  const onApprove = async ()=>{
+  const onGenerateSC = async ()=>{
     if (saving) return
+    if (!basePrice || basePrice <= 0){
+      window.alert('Ingresá un precio base válido.')
+      return
+    }
+    if (!auctionDate){
+      window.alert('Seleccioná la fecha de subasta.')
+      return
+    }
     setSaving(true)
     try{
-      await setArtworkStatus(data.id,'approved')
-      alert('Obra aprobada correctamente.')
-      navigate('/admin', { replace: true })
+      await updateArtwork(data.id, {
+        price: Number(basePrice),
+        fractionFrom: unit,
+        fractionsTotal: FRACTIONS_TOTAL,
+        auctionDate,
+        status: 'approved'
+      })
+      setSuccessMsg('Smart Contract generado y obra aprobada.')
+      setSuccessOpen(true)
+      setTimeout(()=> navigate('/admin', { replace: true }), 1300)
     }finally{ setSaving(false) }
   }
 
@@ -66,9 +97,10 @@ export default function AdminArtworkReview(){
     if (saving) return
     setSaving(true)
     try{
-      await setArtworkStatus(data.id,'pending')
-      alert('La obra volvió a estado pendiente.')
-      navigate('/admin', { replace: true })
+      await updateArtwork(data.id, { status: 'pending' })
+      setSuccessMsg('La obra volvió a estado pendiente.')
+      setSuccessOpen(true)
+      setTimeout(()=> navigate('/admin', { replace: true }), 1200)
     }finally{ setSaving(false) }
   }
 
@@ -120,12 +152,40 @@ export default function AdminArtworkReview(){
                 </div>
               </div>
 
+              {/* Precio base editable */}
+              <div>
+                <label className="form-label">Precio base</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={0}
+                  value={basePrice}
+                  onChange={(e)=> setBasePrice(e.target.value)}
+                  placeholder="Ingresá el precio base de la obra"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  El valor “Desde” se calcula automáticamente como precio base / {FRACTIONS_TOTAL.toLocaleString('es-AR')}.
+                </p>
+              </div>
+
+              {/* Fecha de subasta */}
+              <div>
+                <label className="form-label">Fecha de subasta</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={auctionDate}
+                  min={todayStr}
+                  onChange={(e)=> setAuctionDate(e.target.value)}
+                />
+              </div>
+
               <div className="divider" />
 
               <div className="grid grid-cols-3 gap-3 text-center">
-                <Metric label="Precio ref." value={`$${fmt(data.price)}`} />
-                <Metric label="Desde" value={`$${fmt(data.fractionFrom)}`} />
-                <Metric label="Fracciones" value={`${data.fractionsTotal}`} />
+                <Metric label="Precio base" value={`$${fmt(basePrice)}`} />
+                <Metric label="Desde" value={`$${fmt(unit)}`} />
+                <Metric label="Fracciones" value={`${FRACTIONS_TOTAL.toLocaleString('es-AR')}`} />
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -140,10 +200,10 @@ export default function AdminArtworkReview(){
                 {isPending ? (
                   <button
                     className="btn btn-primary w-full disabled:opacity-60"
-                    onClick={onApprove}
-                    disabled={saving}
+                    onClick={onGenerateSC}
+                    disabled={saving || !basePrice || Number(basePrice) <= 0 || !auctionDate}
                   >
-                    {saving ? 'Aprobando…' : 'Aprobar obra'}
+                    {saving ? 'Generando…' : 'Generar Smart Contract'}
                   </button>
                 ) : (
                   <button
@@ -171,11 +231,38 @@ export default function AdminArtworkReview(){
               <li><strong>Autor:</strong> {data.artist}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
               <li><strong>Estado:</strong> {data.status}</li>
+              <li><strong>Subasta:</strong> {data.auctionDate || '—'}</li>
             </ul>
           </div>
         </div>
       </div>
+
+      {/* MODAL de éxito */}
+      {successOpen && (
+        <SuccessModal
+          message={successMsg}
+          onClose={()=>{ setSuccessOpen(false); navigate('/admin', { replace: true }) }}
+        />
+      )}
     </section>
+  )
+}
+
+/* ----- Modal simple de éxito (igual estilo que en publicar/editar) ----- */
+function SuccessModal({ message, onClose }){
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
+        <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-green-100 text-green-600">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <h3 className="text-lg font-bold">¡Listo!</h3>
+        <p className="mt-1 text-slate-700">{message || 'Operación realizada correctamente.'}</p>
+        <button onClick={onClose} className="btn btn-primary mt-5 w-full">Volver al listado</button>
+      </div>
+    </div>
   )
 }
 

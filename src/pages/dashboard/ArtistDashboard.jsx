@@ -17,9 +17,11 @@ export default function ArtistDashboard() {
   // --------- estado del formulario ---------
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [price, setPrice] = useState(2500)
+
+  // valores internos (no visibles) para crear la obra
   const [fractionFrom, setFractionFrom] = useState(30)
   const [fractionsTotal, setFractionsTotal] = useState(100)
+
   const [gallery, setGallery] = useState([
     'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600&auto=format&fit=crop',
   ])
@@ -28,7 +30,7 @@ export default function ArtistDashboard() {
   const [loading, setLoading] = useState(!!editId)
   const [saving, setSaving] = useState(false)
 
-  // modal de éxito al actualizar
+  // modal de éxito
   const [successOpen, setSuccessOpen] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
 
@@ -46,9 +48,8 @@ export default function ArtistDashboard() {
         if (!alive) return
         setTitle(it.title || '')
         setDescription(it.description || '')
-        setPrice(it.price || 0)
-        setFractionFrom(it.fractionFrom || 0)
-        setFractionsTotal(it.fractionsTotal || 0)
+        setFractionFrom(it.fractionFrom ?? 30)
+        setFractionsTotal(it.fractionsTotal ?? 100)
         setGallery(Array.isArray(it.gallery) && it.gallery.length ? it.gallery : [it.image])
         setTags(new Set(it.tags || []))
       } catch (e) {
@@ -96,11 +97,12 @@ export default function ArtistDashboard() {
     if (saving) return
     setSaving(true)
 
+    // Importante: sin campos de precio ni fracciones visibles,
+    // usamos los valores internos por defecto (fractionFrom y fractionsTotal)
     const payload = {
       title: title?.trim() || 'Obra sin título',
       description: description?.trim() || '',
       artist: user?.name || 'Artista Demo',
-      price: Number(price) || 0,
       fractionFrom: Number(fractionFrom) || 0,
       fractionsTotal: Number(fractionsTotal) || 0,
       image: (gallery.find((u) => !!u) || '').trim(),
@@ -111,14 +113,14 @@ export default function ArtistDashboard() {
     try {
       if (editId) {
         await updateArtwork(editId, payload)
-        // POP-UP de éxito + redirección a /mis-obras
         setSuccessMsg('¡La obra se actualizó correctamente!')
         setSuccessOpen(true)
         setTimeout(() => navigate('/mis-obras', { replace: true }), 1300)
       } else {
-        const created = await createArtwork(payload)
-        // redirigimos a edición para habilitar “Ver obra”
-        navigate(`/publicar?edit=${created.id}`, { replace: true })
+        await createArtwork(payload)
+        setSuccessMsg('¡Publicación enviada! Queda pendiente de aprobación.')
+        setSuccessOpen(true)
+        setTimeout(() => navigate('/mis-obras', { replace: true }), 1300)
       }
     } finally {
       setSaving(false)
@@ -159,10 +161,7 @@ export default function ArtistDashboard() {
               <div className="font-bold">{title || 'Título de la obra'}</div>
               <div className="text-sm text-slate-600">{user?.name || 'Artista Demo'}</div>
 
-              <div className="mt-3 text-sm">
-                <div className="text-slate-500">Precio de referencia</div>
-                <div className="font-semibold">${Number(price || 0).toLocaleString('es-AR')}</div>
-              </div>
+              {/* sin precio ni fracciones en la preview */}
 
               <div className="mt-4">
                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm">
@@ -241,41 +240,7 @@ export default function ArtistDashboard() {
                   />
                 </div>
 
-                {/* fila de 3 inputs alineados */}
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="form-label">Precio</label>
-                    <input
-                      type="number"
-                      className="input"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      min={0}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="form-label">Fracciones desde</label>
-                    <input
-                      type="number"
-                      className="input"
-                      value={fractionFrom}
-                      onChange={(e) => setFractionFrom(e.target.value)}
-                      min={0}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="form-label"># de fracciones</label>
-                    <input
-                      type="number"
-                      className="input"
-                      value={fractionsTotal}
-                      onChange={(e) => setFractionsTotal(e.target.value)}
-                      min={1}
-                    />
-                  </div>
-                </div>
+                {/* SIN campos de precio ni fracciones */}
 
                 {/* imágenes */}
                 <div className="mt-5">
@@ -355,7 +320,7 @@ export default function ArtistDashboard() {
         </div>
       </div>
 
-      {/* MODAL de éxito al ACTUALIZAR */}
+      {/* MODAL de éxito */}
       {successOpen && (
         <SuccessModal
           message={successMsg}

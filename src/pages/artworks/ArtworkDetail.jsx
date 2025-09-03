@@ -44,6 +44,17 @@ export default function ArtworkDetail(){
     return Math.round(100 - (data.fractionsLeft / data.fractionsTotal) * 100)
   }, [data])
 
+  // --- NUEVO: formateo de fecha de subasta (YYYY-MM-DD -> DD/MM/YYYY)
+  const auctionDateText = useMemo(()=>{
+    const iso = data?.auctionDate
+    if (!iso) return null
+    // evitar problemas de zona horaria: parseo manual
+    const [yyyy, mm, dd] = String(iso).split('-')
+    if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`
+    // fallback si viene otro formato
+    try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
+  }, [data?.auctionDate])
+
   if (loading) return <section className="section-frame py-16"><Skeleton/></section>
   if (err) return (
     <section className="section-frame py-16">
@@ -116,6 +127,12 @@ export default function ArtworkDetail(){
                 <Metric label="Vend." value={`${soldPct}%`} />
               </div>
 
+              {/* NUEVO: fecha de subasta visible para compradores */}
+              <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                <CalendarIcon className="h-5 w-5 text-slate-500" />
+                <span><strong>Subasta:</strong> {auctionDateText || 'A definir'}</span>
+              </div>
+
               <div className="mt-2">
                 <div className="flex justify-between text-xs text-slate-600 mb-1">
                   <span>Disponibles</span>
@@ -181,6 +198,8 @@ export default function ArtworkDetail(){
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
+              {/* NUEVO: fecha de subasta también en ficha técnica */}
+              <li><strong>Subasta:</strong> {auctionDateText || 'A definir'}</li>
               <li><strong>Rating:</strong> {rating.avg || data.rating || 0}</li>
             </ul>
             <div className="mt-4">
@@ -225,6 +244,11 @@ function Share(props){ return (<svg viewBox="0 0 24 24" fill="none" stroke="curr
   <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
   <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/>
 </svg>)}
+function CalendarIcon(props){ return (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+    <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+  </svg>
+)}
 function fmt(n){ return n.toLocaleString('es-AR') }
 
 /* --- selector de estrellas --- */

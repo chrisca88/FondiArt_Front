@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useSelector } from 'react-redux'
 import { listArtworks } from '../../services/mockArtworks.js'
 import ArtworkCard from '../../components/artworks/ArtworkCard.jsx'
 import RecommendedRow from '../../components/artworks/RecommendedRow.jsx'
@@ -8,10 +9,32 @@ export default function BuyerDashboard(){
   const [items, setItems] = useState([])
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('relevance')
-  const [tag, setTag] = useState('')   // filtro por tag
+  const [tag, setTag] = useState('')
   const [loading, setLoading] = useState(true)
 
+  const user = useSelector(s => s.auth.user)
+  const favKey = useMemo(()=> user?.id ? `fav_${user.id}` : 'fav_anon', [user?.id])
+  const [favs, setFavs] = useState(new Set())
+
   const navigate = useNavigate()
+
+  // cargar favoritos por usuario
+  useEffect(()=>{
+    try{
+      const arr = JSON.parse(localStorage.getItem(favKey) || '[]')
+      setFavs(new Set(arr))
+    }catch{ setFavs(new Set()) }
+  }, [favKey])
+
+  const toggleFav = (artId)=>{
+    setFavs(prev => {
+      const next = new Set(prev)
+      if(next.has(artId)) next.delete(artId)
+      else next.add(artId)
+      localStorage.setItem(favKey, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   useEffect(()=>{
     let alive = true
@@ -24,7 +47,6 @@ export default function BuyerDashboard(){
     return ()=>{ alive = false }
   }, [q, sort])
 
-  // filtrado por tag en cliente
   const viewItems = useMemo(()=>{
     if (!tag) return items
     return items.filter(x => x.tags.includes(tag))
@@ -32,7 +54,6 @@ export default function BuyerDashboard(){
 
   const empty = !loading && viewItems.length === 0
 
-  // métricas para el hero
   const metrics = useMemo(()=>{
     const total = viewItems.length
     const artists = new Set(viewItems.map(i=>i.artist)).size
@@ -45,10 +66,9 @@ export default function BuyerDashboard(){
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className='mt-8'>
-        {/* NUEVO: Recomendados para el comprador */}
-      <RecommendedRow />
+        <RecommendedRow />
       </div>
-      
+
       {/* HERO */}
       <div className="section-frame pt-10 pb-6">
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
@@ -64,7 +84,6 @@ export default function BuyerDashboard(){
               </p>
             </div>
 
-            {/* métricas */}
             <div className="grid grid-cols-3 gap-4 min-w-[260px]">
               <Metric label="Obras" value={metrics.total}/>
               <Metric label="Artistas" value={metrics.artists}/>
@@ -94,7 +113,6 @@ export default function BuyerDashboard(){
               </select>
             </div>
 
-            {/* chips de categorías (scroll horizontal en mobile) */}
             <div className="flex items-center gap-2 overflow-x-auto py-1">
               <Chip label="Todas" active={!tag} onClick={()=>setTag('')}/>
               {tags.map(t => (
@@ -104,7 +122,6 @@ export default function BuyerDashboard(){
           </div>
         </div>
       </div>
-
 
       {/* GRID */}
       <div className="section-frame pb-16">
@@ -122,6 +139,8 @@ export default function BuyerDashboard(){
               <ArtworkCard
                 key={item.id}
                 item={item}
+                isFav={favs.has(item.id)}
+                onToggleFav={()=>toggleFav(item.id)}
                 onView={()=> navigate(`/obra/${item.id}`)}
               />
             ))}
@@ -132,7 +151,7 @@ export default function BuyerDashboard(){
   )
 }
 
-/* --- componentes auxiliares --- */
+/* --- auxiliares --- */
 function Metric({ label, value }){
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-center">
