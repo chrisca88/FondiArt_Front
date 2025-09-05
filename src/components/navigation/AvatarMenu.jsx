@@ -68,6 +68,11 @@ export default function AvatarMenu({ user }) {
               </Link>
             )}
 
+            {/* NEW: Wallet para todos los roles */}
+            <Link className="block px-4 py-2 hover:bg-slate-50" to="/wallet" onClick={()=>setOpen(false)}>
+              Wallet
+            </Link>
+
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/cuenta" onClick={()=>setOpen(false)}>
               Mi perfil
             </Link>

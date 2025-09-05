@@ -16,12 +16,14 @@ import RequireAuth from './hocs/auth/RequireAuth.jsx'
 import ArtworkDetail from './pages/artworks/ArtworkDetail.jsx'
 import Profile from './pages/account/Profile.jsx'
 import MyWorks from './pages/dashboard/MyWorks.jsx'
-
-import ArtworkStats from './pages/artworks/ArtworkStats.jsx';
+import ArtworkStats from './pages/artworks/ArtworkStats.jsx'
 
 // Admin
 import AdminDashboard from './pages/admin/AdminDashboard.jsx'
 import AdminArtworkReview from './pages/admin/AdminArtworkReview.jsx'
+
+// NEW
+import Wallet from './pages/wallet/Wallet.jsx'
 
 export default function App(){
   return (
@@ -41,9 +43,11 @@ export default function App(){
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
 
-          {/* Detalles de obra (visibles para cualquier rol logueado) */}
-          <Route path="/obra/:id" element={<ArtworkDetail/>} />
+          {/* NEW: Wallet (todos los roles) */}
+          <Route path="/wallet" element={<Wallet/>} />
 
+          {/* Detalles de obra */}
+          <Route path="/obra/:id" element={<ArtworkDetail/>} />
           <Route path="/obra/:id/estadisticas" element={<ArtworkStats />} />
 
           {/* Admin */}
