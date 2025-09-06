@@ -28,6 +28,7 @@ export default function AvatarMenu({ user }) {
   }
 
   const isArtist = user?.role === 'artist'
+  const isBuyer  = user?.role === 'buyer'
 
   return (
     <div className="relative" ref={ref}>
@@ -68,10 +69,17 @@ export default function AvatarMenu({ user }) {
               </Link>
             )}
 
-            {/* NEW: Wallet para todos los roles */}
+            {/* Wallet (todos los roles) */}
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/wallet" onClick={()=>setOpen(false)}>
               Wallet
             </Link>
+
+            {/* NEW: Donaciones (solo compradores) */}
+            {isBuyer && (
+              <Link className="block px-4 py-2 hover:bg-slate-50" to="/donaciones" onClick={()=>setOpen(false)}>
+                Donaciones
+              </Link>
+            )}
 
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/cuenta" onClick={()=>setOpen(false)}>
               Mi perfil

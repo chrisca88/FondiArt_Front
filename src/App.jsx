@@ -22,8 +22,12 @@ import ArtworkStats from './pages/artworks/ArtworkStats.jsx'
 import AdminDashboard from './pages/admin/AdminDashboard.jsx'
 import AdminArtworkReview from './pages/admin/AdminArtworkReview.jsx'
 
-// NEW
+// Wallet
 import Wallet from './pages/wallet/Wallet.jsx'
+
+// NEW: Donaciones (listado + perfil)
+import Donations from './pages/donations/Donations.jsx'
+import ArtistDonate from './pages/donations/ArtistDonate.jsx'
 
 export default function App(){
   return (
@@ -43,8 +47,12 @@ export default function App(){
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
 
-          {/* NEW: Wallet (todos los roles) */}
+          {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />
+
+          {/* NEW: Donaciones (solo navegación; validad el rol desde el menú) */}
+          <Route path="/donaciones" element={<Donations/>} />
+          <Route path="/donaciones/artista/:slug" element={<ArtistDonate/>} />
 
           {/* Detalles de obra */}
           <Route path="/obra/:id" element={<ArtworkDetail/>} />
