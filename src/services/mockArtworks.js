@@ -315,6 +315,25 @@ export async function getArtworkById(id) {
   return withDefaults(found);
 }
 
+/* ---------------- VENTA DE FRACCIONES (para compras) ---------------- */
+/** Disminuye de manera segura las fracciones disponibles */
+export async function sellFractions(id, qty){
+  seedIfEmpty();
+  await sleep(120);
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const idx = list.findIndex((i) => i.id === id);
+  if (idx === -1) throw new Error('Obra no encontrada');
+
+  const it = list[idx];
+  const q = Math.max(1, Number(qty) || 1);
+  if (q > Number(it.fractionsLeft || 0)) throw new Error('No hay suficientes fracciones disponibles.');
+  it.fractionsLeft = Number(it.fractionsLeft || 0) - q;
+
+  list[idx] = it;
+  saveList(list);
+  return withDefaults(it);
+}
+
 /* ---------------- Rating API pública ---------------- */
 
 /** Devuelve promedio, cantidad y (si pasa userId) la valoración propia */

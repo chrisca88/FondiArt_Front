@@ -7,6 +7,7 @@ import {
   getArtworkRating,
   rateArtwork
 } from '../../services/mockArtworks.js'
+import { buyFractions } from '../../services/mockWallet.js'
 
 export default function ArtworkDetail(){
   const { id } = useParams()
@@ -21,6 +22,18 @@ export default function ArtworkDetail(){
   // rating agregado
   const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
   const canRate = !!user && user.role === 'buyer'
+  const canBuy  = !!user && user.role === 'buyer'
+
+  // --- NUEVO: compra (modal)
+  const [buyOpen, setBuyOpen] = useState(false)
+  const [qty, setQty] = useState(1)
+  const [buying, setBuying] = useState(false)
+  const [buyErr, setBuyErr] = useState('')
+  const [buyOk, setBuyOk] = useState(false)
+  const unit = Number(data?.fractionFrom || 0)
+  const total = useMemo(()=> Math.round(unit * Number(qty || 0) * 100) / 100, [unit, qty])
+
+  useEffect(()=>{ setQty(1); setBuyErr(''); setBuyOk(false) }, [buyOpen])
 
   useEffect(()=>{
     let alive = true
@@ -48,10 +61,8 @@ export default function ArtworkDetail(){
   const auctionDateText = useMemo(()=>{
     const iso = data?.auctionDate
     if (!iso) return null
-    // evitar problemas de zona horaria: parseo manual
     const [yyyy, mm, dd] = String(iso).split('-')
     if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`
-    // fallback si viene otro formato
     try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
   }, [data?.auctionDate])
 
@@ -178,7 +189,11 @@ export default function ArtworkDetail(){
               {/* -------------------------------- */}
 
               <div className="flex gap-2 pt-2">
-                <button className="btn btn-primary flex-1" onClick={()=>alert('(Demo) Comprar fracción')}>
+                <button
+                  className="btn btn-primary flex-1 disabled:opacity-60"
+                  disabled={!canBuy}
+                  onClick={()=> setBuyOpen(true)}
+                >
                   Comprar fracción
                 </button>
                 <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
@@ -208,6 +223,101 @@ export default function ArtworkDetail(){
           </div>
         </div>
       </div>
+
+      {/* ===== MODAL DE COMPRA ===== */}
+      {buyOpen && (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
+            <div className="p-5 border-b border-slate-200/70 flex items-center justify-between">
+              <h3 className="text-lg font-bold">Comprar fracciones</h3>
+              <button className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {!buyOk ? (
+                <>
+                  <div className="text-sm text-slate-700">
+                    <div className="font-semibold">{data.title}</div>
+                    <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
+                    <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
+                  </div>
+
+                  <div>
+                    <label className="form-label">Cantidad</label>
+                    <div className="flex items-stretch gap-2">
+                      <button
+                        className="btn btn-outline"
+                        type="button"
+                        onClick={()=> setQty(q => Math.max(1, Number(q||1) - 1))}
+                      >−</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={Math.max(1, Number(data.fractionsLeft||1))}
+                        className="input flex-1 text-center"
+                        value={qty}
+                        onChange={e=>{
+                          const v = Math.floor(Math.max(1, Number(e.target.value||1)))
+                          const max = Number(data.fractionsLeft||1)
+                          setQty(Math.min(v, max))
+                        }}
+                      />
+                      <button
+                        className="btn btn-outline"
+                        type="button"
+                        onClick={()=>{
+                          const max = Number(data.fractionsLeft||1)
+                          setQty(q => Math.min(max, Number(q||1) + 1))
+                        }}
+                      >+</button>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      Total a pagar: <strong>${fmt(total)}</strong>
+                    </div>
+                  </div>
+
+                  {buyErr && <div className="text-sm text-red-600">{buyErr}</div>}
+
+                  <div className="pt-1 flex gap-2">
+                    <button className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
+                    <button
+                      className="btn btn-primary flex-1 disabled:opacity-60"
+                      disabled={buying || !qty || qty < 1}
+                      onClick={async ()=>{
+                        setBuying(true); setBuyErr('')
+                        try{
+                          const res = await buyFractions(user, data.id, Number(qty||1))
+                          // actualizar ficha con la obra devuelta
+                          setData(res.artwork)
+                          setBuyOk(true)
+                        }catch(e){
+                          setBuyErr(e.message || 'No se pudo completar la compra.')
+                        }finally{
+                          setBuying(false)
+                        }
+                      }}
+                    >
+                      {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center space-y-3">
+                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+                    ✓
+                  </div>
+                  <h4 className="text-lg font-bold">¡Compra exitosa!</h4>
+                  <p className="text-slate-600 text-sm">
+                    Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''} por <strong>${fmt(total)}</strong>.
+                  </p>
+                  <button className="btn btn-primary w-full" onClick={()=>setBuyOpen(false)}>Aceptar</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ===== FIN MODAL ===== */}
     </section>
   )
 }
@@ -249,7 +359,7 @@ function CalendarIcon(props){ return (
     <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
   </svg>
 )}
-function fmt(n){ return n.toLocaleString('es-AR') }
+function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
 
 /* --- selector de estrellas --- */
 function StarSelector({ value = 0, onChange }){

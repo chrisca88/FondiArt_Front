@@ -1,5 +1,5 @@
 // src/services/mockWallet.js
-import { listArtworks } from './mockArtworks.js'
+import { listArtworks, getArtworkById, sellFractions } from './mockArtworks.js'
 
 const PREFIX = 'mock_wallet_v1_'
 const sleep = (ms = 300) => new Promise(r => setTimeout(r, ms))
@@ -74,6 +74,42 @@ export async function demoBuy(user, artworkId, qty){
   w.positions = w.positions || {}
   w.positions[artworkId] = Number(w.positions[artworkId] || 0) + Number(qty || 0)
   return setWallet(uid, w)
+}
+
+/* ===================== COMPRAS REALES (mock) ===================== */
+/**
+ * Compra `qty` fracciones de una obra:
+ * - Valida fondos y disponibilidad
+ * - Descuenta ARS en la wallet
+ * - Aumenta la posición del token
+ * - Reduce `fractionsLeft` de la obra
+ * Retorna { wallet, artwork, total, qty }
+ */
+export async function buyFractions(user, artworkId, qty){
+  const uid = user?.id || 'anon'
+  seedIfEmpty(uid)
+
+  const q = Math.max(1, Number(qty) || 0)
+  const w = await getWallet(uid)
+  const art = await getArtworkById(artworkId)
+  const unit = Number(art.fractionFrom || 0)
+  const total = Math.round(unit * q * 100) / 100
+
+  if (!unit) throw new Error('La obra no tiene precio de fracción válido.')
+  if (q > Number(art.fractionsLeft || 0)) throw new Error('No hay suficientes fracciones disponibles.')
+  if (Number(w.cashARS || 0) < total) throw new Error('Fondos insuficientes en tu wallet.')
+
+  // 1) Descontar efectivo y sumar posición
+  w.cashARS = Math.round((Number(w.cashARS) - total) * 100) / 100
+  w.positions = w.positions || {}
+  w.positions[artworkId] = Number(w.positions[artworkId] || 0) + q
+  await setWallet(uid, w)
+
+  // 2) Reducir fracciones disponibles de la obra
+  const updatedArtwork = await sellFractions(artworkId, q)
+
+  await sleep(120)
+  return { wallet: w, artwork: updatedArtwork, total, qty: q }
 }
 
 /* ===================== DONACIONES ===================== */
