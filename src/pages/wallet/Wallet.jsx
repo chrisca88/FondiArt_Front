@@ -54,6 +54,14 @@ export default function Wallet(){
               <p className="eyebrow">Balance</p>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mi wallet</h1>
               <p className="lead mt-2 max-w-2xl">Resumen de tus tenencias y saldo disponible.</p>
+
+              {/* Dirección de wallet */}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                <code className="px-2 py-1 rounded bg-gray-100 border text-gray-700 select-all break-all">
+                  {user?.walletAddress || '(sin dirección)'}
+                </code>
+                {user?.walletAddress && <CopyButton text={user.walletAddress} />}
+              </div>
             </div>
 
             <BalanceBox
@@ -186,6 +194,24 @@ function BalanceBox({ value = 0, masked = false, onToggle }){
       <div className="text-2xl font-extrabold">{masked ? '******' : `$${fmt(value)}`}</div>
       <div className="text-[11px] tracking-wider uppercase text-slate-500">Saldo en pesos</div>
     </div>
+  )
+}
+
+function CopyButton({ text }){
+  const [copied, setCopied] = useState(false)
+  async function handleCopy(){
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(()=> setCopied(false), 1200)
+    } catch (e) {
+      console.error('No se pudo copiar', e)
+    }
+  }
+  return (
+    <button onClick={handleCopy} className="btn btn-outline btn-sm" title="Copiar dirección">
+      {copied ? '¡Copiado!' : 'Copiar'}
+    </button>
   )
 }
 
