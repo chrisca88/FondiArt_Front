@@ -1,3 +1,4 @@
+// src/components/navigation/AuthBar.jsx
 import { useSelector, useDispatch } from 'react-redux'
 import { Link, useNavigate } from 'react-router-dom'
 import { logout } from '../../features/auth/authSlice'
@@ -21,6 +22,9 @@ export default function AuthBar(){
           <>
             <span className="hidden sm:inline">Hola, {user?.name || user?.email}</span>
             <Link to="/dashboard" className="font-semibold">Dashboard</Link>
+            {user?.role === 'buyer' && (
+              <Link to="/mercado" className="font-semibold">Mercado</Link>
+            )}
             <button onClick={onLogout}>Salir</button>
           </>
         )}

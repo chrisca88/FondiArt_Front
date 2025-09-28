@@ -74,7 +74,14 @@ export default function AvatarMenu({ user }) {
               Wallet
             </Link>
 
-            {/* NEW: Donaciones (solo compradores) */}
+            {/* Mercado secundario (solo buyers; cambia a !isArtist si querés mostrarlo a todos) */}
+            {isBuyer && (
+              <Link className="block px-4 py-2 hover:bg-slate-50" to="/mercado" onClick={()=>setOpen(false)}>
+                Mercado secundario
+              </Link>
+            )}
+
+            {/* Donaciones (solo compradores) */}
             {isBuyer && (
               <Link className="block px-4 py-2 hover:bg-slate-50" to="/donaciones" onClick={()=>setOpen(false)}>
                 Donaciones

@@ -29,6 +29,8 @@ import Wallet from './pages/wallet/Wallet.jsx'
 import Donations from './pages/donations/Donations.jsx'
 import ArtistDonate from './pages/donations/ArtistDonate.jsx'
 
+import SecondaryMarket from './pages/market/SecondaryMarket.jsx'
+
 export default function App(){
   return (
     <Routes>
@@ -46,6 +48,7 @@ export default function App(){
           <Route path="/publicar" element={<ArtistDashboard/>} />
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
+          <Route path="/mercado" element={<SecondaryMarket/>} />
 
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />

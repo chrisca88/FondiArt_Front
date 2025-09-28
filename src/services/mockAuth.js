@@ -13,14 +13,41 @@ function genWalletAddress(seed = '') {
 
 const SEED_USERS = [
   // Cada seed recibe una walletAddress mock para pruebas
-  { id: 'u-buyer',  name: 'Cliente Demo',  email: 'buyer@demo.com',  role: 'buyer',  password: 'buyer',  walletAddress: genWalletAddress('buyer@demo.com')  },
-  { id: 'u-artist', name: 'Artista Demo',  email: 'artist@demo.com', role: 'artist', password: 'artist', walletAddress: genWalletAddress('artist@demo.com') },
-  { id: 'u-admin',  name: 'Admin Demo',    email: 'admin@demo.com',  role: 'admin',  password: 'admin',  walletAddress: genWalletAddress('admin@demo.com')  },
+  { id: 'u-buyer',   name: 'Cliente Demo',   email: 'buyer@demo.com',   role: 'buyer',  password: 'buyer',  walletAddress: genWalletAddress('buyer@demo.com')  },
+  { id: 'u-buyer2',  name: 'Cliente Demo 2', email: 'buyer2@demo.com',  role: 'buyer',  password: 'buyer2', walletAddress: genWalletAddress('buyer2@demo.com') },
+  { id: 'u-artist',  name: 'Artista Demo',   email: 'artist@demo.com',  role: 'artist', password: 'artist', walletAddress: genWalletAddress('artist@demo.com') },
+  { id: 'u-admin',   name: 'Admin Demo',     email: 'admin@demo.com',   role: 'admin',  password: 'admin',  walletAddress: genWalletAddress('admin@demo.com')  },
 ];
 
+/**
+ * Si no hay datos -> siembra todos los usuarios seed.
+ * Si ya hay datos -> garantiza que exista buyer2@demo.com (migración suave).
+ */
 function seedIfEmpty() {
-  if (!localStorage.getItem(KEY)) {
+  let list = [];
+  try {
+    list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  } catch {
+    list = [];
+  }
+
+  if (!list.length) {
     localStorage.setItem(KEY, JSON.stringify(SEED_USERS));
+    return;
+  }
+
+  // Asegurar que esté el nuevo buyer2 si faltaba
+  if (!list.some(u => u.email === 'buyer2@demo.com')) {
+    const u = {
+      id: 'u-buyer2',
+      name: 'Cliente Demo 2',
+      email: 'buyer2@demo.com',
+      role: 'buyer',
+      password: 'buyer2',
+      walletAddress: genWalletAddress('buyer2@demo.com'),
+    };
+    const newList = [...list, u];
+    localStorage.setItem(KEY, JSON.stringify(newList));
   }
 }
 
