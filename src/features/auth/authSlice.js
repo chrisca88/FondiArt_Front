@@ -1,13 +1,11 @@
 // src/features/auth/authSlice.js
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
-// Si luego conectás backend real, podrás usar axios:
-// import axios from 'axios'
 import * as mock from '../../services/mockAuth.js'
+import authService, { setAuthToken } from '../../services/authService.js'
 
 const isMock =
   String(import.meta.env.VITE_MOCK_AUTH ?? '1').toLowerCase() !== '0' &&
   String(import.meta.env.VITE_MOCK_AUTH ?? '1').toLowerCase() !== 'false'
-// const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const initialState = {
   token : localStorage.getItem('token') || null,
@@ -19,20 +17,34 @@ const initialState = {
 /* ============ THUNKS ============ */
 export const register = createAsyncThunk('auth/register', async (payload, { rejectWithValue })=>{
   try{
-    if (isMock) return await mock.register(payload)
-    // const { data } = await axios.post(`${API}/api/auth/register/`, payload);
-    // return data;
-    throw new Error('Backend no configurado')
-  }catch(err){ return rejectWithValue(err.message || 'Error') }
+    if (isMock) {
+      return await mock.register(payload)
+    }
+    // Backend real
+    const data = await authService.register(payload) // { token, user }
+    if (data?.token) setAuthToken(data.token)
+    if (data?.token) localStorage.setItem('token', data.token)
+    if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
+    return data
+  }catch(err){
+    return rejectWithValue(err.response?.data?.message || err.message || 'Error')
+  }
 })
 
 export const login = createAsyncThunk('auth/login', async (payload, { rejectWithValue })=>{
   try{
-    if (isMock) return await mock.login(payload)
-    // const { data } = await axios.post(`${API}/api/auth/login/`, payload);
-    // return data;
-    throw new Error('Backend no configurado')
-  }catch(err){ return rejectWithValue(err.message || 'Error') }
+    if (isMock) {
+      return await mock.login(payload)
+    }
+    // Backend real
+    const data = await authService.login(payload) // { token, user }
+    if (data?.token) setAuthToken(data.token)
+    if (data?.token) localStorage.setItem('token', data.token)
+    if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
+    return data
+  }catch(err){
+    return rejectWithValue(err.response?.data?.message || err.message || 'Error')
+  }
 })
 
 export const loginDemo = createAsyncThunk('auth/loginDemo', async (role, { rejectWithValue })=>{
@@ -42,9 +54,22 @@ export const loginDemo = createAsyncThunk('auth/loginDemo', async (role, { rejec
 })
 
 export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
-  if (isMock) return await mock.getCurrent()
-  // const { data } = await axios.get(`${API}/api/auth/user/`);
-  // return data;
+  if (isMock) {
+    return await mock.getCurrent()
+  }
+  // Backend real: intenta cargar el perfil con el token guardado
+  const token = localStorage.getItem('token') || null
+  if (token) setAuthToken(token)
+  try{
+    const user = await authService.me() // devuelve User
+    return { token, user }
+  }catch{
+    // si falla, limpiamos session local
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    setAuthToken(null)
+    throw new Error('No hay sesión')
+  }
 })
 
 /* ============ SLICE ============ */
@@ -60,6 +85,7 @@ const authSlice = createSlice({
       try { mock.logout?.() } catch {}
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      setAuthToken(null)
     },
     // Actualiza campos del perfil (mock) y persiste en localStorage
     updateProfile(state, action){
@@ -74,7 +100,6 @@ const authSlice = createSlice({
       state.error  = null
       state.token  = action.payload?.token ?? state.token
       state.user   = action.payload?.user  ?? state.user
-      // (mock ya guarda en localStorage; igual el store queda sincronizado)
     }
     const pending  = (state)=>{ state.status = 'loading'; state.error = null }
     const rejected = (state, action)=>{ state.status = 'failed'; state.error = action.payload || 'Error' }
