@@ -8,10 +8,12 @@ export default function Register(){
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     role: 'buyer',
     agree: true,
   })
   const [showPass, setShowPass] = useState(false)
+  const [showPass2, setShowPass2] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -21,6 +23,7 @@ export default function Register(){
   const onChange = (e) => {
     const { name, type, checked, value } = e.target
     setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+    if (error) setError(null)
   }
 
   // --- fuerza de la contraseña ---------------------------------------------
@@ -31,13 +34,26 @@ export default function Register(){
     : strength.score === 3 ? 'bg-amber-500'
     : 'bg-emerald-600'
 
+  const passwordsMatch = useMemo(
+    ()=> form.password.length > 0 && form.password === form.confirmPassword,
+    [form.password, form.confirmPassword]
+  )
+
+  const canSubmit =
+    !loading &&
+    form.agree &&
+    strength.score >= 3 &&
+    passwordsMatch &&
+    !!form.name &&
+    !!form.email
+
   const onSubmit = async (e)=>{
     e.preventDefault()
     setError(null)
 
-    // Validaciones simples
     if(!form.agree) return setError('Debés aceptar los términos y condiciones.')
     if(strength.score < 3) return setError('La contraseña es débil. Usá al menos 8 caracteres con mayúsculas, minúsculas, números y símbolo.')
+    if(!passwordsMatch) return setError('Las contraseñas no coinciden.')
 
     setLoading(true)
     const action = await dispatch(registerAction({
@@ -174,6 +190,38 @@ export default function Register(){
               </div>
             </div>
 
+            {/* Confirmar contraseña */}
+            <div>
+              <label className="form-label" htmlFor="confirmPassword">Repetir contraseña</label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <LockIcon className="h-5 w-5"/>
+                </span>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type={showPass2 ? 'text' : 'password'}
+                  className={`input pl-10 pr-10 ${form.confirmPassword && !passwordsMatch ? '!border-red-300 focus:!ring-red-200' : ''}`}
+                  placeholder="Repetí la contraseña"
+                  value={form.confirmPassword}
+                  onChange={onChange}
+                  required
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={()=>setShowPass2(!showPass2)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-slate-500 hover:text-slate-700"
+                  aria-label={showPass2 ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPass2 ? <EyeOffIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}
+                </button>
+              </div>
+              {form.confirmPassword && !passwordsMatch && (
+                <p className="mt-1 text-xs text-red-600">Las contraseñas no coinciden.</p>
+              )}
+            </div>
+
             {/* Rol */}
             <div>
               <label className="form-label" htmlFor="role">Rol</label>
@@ -200,7 +248,7 @@ export default function Register(){
             {/* Submit */}
             <button
               className="btn btn-primary btn-lg w-full disabled:opacity-70 disabled:cursor-not-allowed"
-              disabled={loading}
+              disabled={!canSubmit}
             >
               {loading ? <span className="inline-flex items-center gap-2"><Spinner/> Creando…</span> : 'Crear cuenta'}
             </button>
