@@ -13,49 +13,59 @@ function genWalletAddress(seed = '') {
 
 const SEED_USERS = [
   // Cada seed recibe una walletAddress mock para pruebas
-  { id: 'u-buyer',   name: 'Cliente Demo',   email: 'buyer@demo.com',   role: 'buyer',  password: 'buyer',  walletAddress: genWalletAddress('buyer@demo.com')  },
-  { id: 'u-buyer2',  name: 'Cliente Demo 2', email: 'buyer2@demo.com',  role: 'buyer',  password: 'buyer2', walletAddress: genWalletAddress('buyer2@demo.com') },
-  { id: 'u-artist',  name: 'Artista Demo',   email: 'artist@demo.com',  role: 'artist', password: 'artist', walletAddress: genWalletAddress('artist@demo.com') },
-  { id: 'u-admin',   name: 'Admin Demo',     email: 'admin@demo.com',   role: 'admin',  password: 'admin',  walletAddress: genWalletAddress('admin@demo.com')  },
+  { id: 'u-buyer',   name: 'Cliente Demo',   email: 'buyer@demo.com',   role: 'buyer',  password: 'buyer',  walletAddress: genWalletAddress('buyer@demo.com'),  dni: '', cbu: '' },
+  { id: 'u-buyer2',  name: 'Cliente Demo 2', email: 'buyer2@demo.com',  role: 'buyer',  password: 'buyer2', walletAddress: genWalletAddress('buyer2@demo.com'), dni: '', cbu: '' },
+  { id: 'u-artist',  name: 'Artista Demo',   email: 'artist@demo.com',  role: 'artist', password: 'artist', walletAddress: genWalletAddress('artist@demo.com'), dni: '', cbu: '' },
+  { id: 'u-admin',   name: 'Admin Demo',     email: 'admin@demo.com',   role: 'admin',  password: 'admin',  walletAddress: genWalletAddress('admin@demo.com'),  dni: '', cbu: '' },
 ];
 
 /**
  * Si no hay datos -> siembra todos los usuarios seed.
- * Si ya hay datos -> garantiza que exista buyer2@demo.com (migración suave).
+ * Si ya hay datos -> migra: asegura buyer2, agrega campos nuevos (dni/cbu) y wallet si faltara.
  */
 function seedIfEmpty() {
   let list = [];
-  try {
-    list = JSON.parse(localStorage.getItem(KEY) || '[]');
-  } catch {
-    list = [];
-  }
+  try { list = JSON.parse(localStorage.getItem(KEY) || '[]'); }
+  catch { list = []; }
 
   if (!list.length) {
     localStorage.setItem(KEY, JSON.stringify(SEED_USERS));
     return;
   }
 
-  // Asegurar que esté el nuevo buyer2 si faltaba
+  let changed = false;
+
+  // Asegurar buyer2
   if (!list.some(u => u.email === 'buyer2@demo.com')) {
-    const u = {
+    list.push({
       id: 'u-buyer2',
       name: 'Cliente Demo 2',
       email: 'buyer2@demo.com',
       role: 'buyer',
       password: 'buyer2',
       walletAddress: genWalletAddress('buyer2@demo.com'),
-    };
-    const newList = [...list, u];
-    localStorage.setItem(KEY, JSON.stringify(newList));
+      dni: '',
+      cbu: '',
+    });
+    changed = true;
   }
+
+  // Agregar campos faltantes / wallet si faltara
+  list = list.map(u => {
+    const v = { ...u };
+    if (v.dni === undefined) { v.dni = ''; changed = true; }
+    if (v.cbu === undefined) { v.cbu = ''; changed = true; }
+    if (!v.walletAddress)    { v.walletAddress = genWalletAddress(v.email || v.id || 'seed'); changed = true; }
+    return v;
+  });
+
+  if (changed) localStorage.setItem(KEY, JSON.stringify(list));
 }
 
 /** Garantiza que el usuario tenga wallet; si no, la crea y persiste. */
 function ensureUserHasWallet(user, list) {
   if (!user.walletAddress) {
     user.walletAddress = genWalletAddress(user.email || user.id || 'seed');
-    // Persistir en el listado si corresponde
     if (Array.isArray(list)) {
       const idx = list.findIndex(u => u.id === user.id);
       if (idx !== -1) {
@@ -65,6 +75,9 @@ function ensureUserHasWallet(user, list) {
       }
     }
   }
+  // Normalizar campos nuevos si faltaran
+  if (user.dni === undefined) user.dni = '';
+  if (user.cbu === undefined) user.cbu = '';
   return user;
 }
 
@@ -84,7 +97,9 @@ export async function register({ name, email, password, role = 'buyer' }) {
   const user = {
     id: 'u' + Date.now(),
     name, email, role, password,
-    walletAddress: genWalletAddress(email)
+    walletAddress: genWalletAddress(email),
+    dni: '',
+    cbu: '',
   };
   list.push(user);
   localStorage.setItem(KEY, JSON.stringify(list));
@@ -118,11 +133,11 @@ export async function getCurrent() {
   const token = localStorage.getItem('token');
   const user  = JSON.parse(localStorage.getItem('user') || 'null');
   if (!token || !user) throw new Error('No hay sesión');
-  // Si el user en localStorage no tiene wallet, generarla y persistir
-  if (!user.walletAddress) {
-    user.walletAddress = genWalletAddress(user.email || user.id || 'seed');
-    localStorage.setItem('user', JSON.stringify(user));
-  }
+  // Normalizar en sesión por si faltara algo
+  if (!user.walletAddress) user.walletAddress = genWalletAddress(user.email || user.id || 'seed');
+  if (user.dni === undefined) user.dni = '';
+  if (user.cbu === undefined) user.cbu = '';
+  localStorage.setItem('user', JSON.stringify(user));
   return { token, user };
 }
 

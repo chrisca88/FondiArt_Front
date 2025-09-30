@@ -12,8 +12,11 @@ export default function Profile(){
     avatar: user?.avatar || '',
     bio:    user?.bio    || '',
     phone:  user?.phone  || '',
+    dni:    user?.dni    || '',
+    cbu:    user?.cbu    || '',
   })
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved]  = useState(false)
+  const [errors, setErrors] = useState({})
 
   const onChange = (e)=>{
     const { name, value } = e.target
@@ -21,13 +24,40 @@ export default function Profile(){
     setSaved(false)
   }
 
+  const validate = ()=>{
+    const errs = {}
+
+    // DNI: 7 a 9 dígitos (flexible; ajustá si querés 8 exactos)
+    if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) {
+      errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
+    }
+
+    // CBU: 22 dígitos sin guiones ni espacios
+    if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) {
+      errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
+    }
+
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
   const onSubmit = (e)=>{
     e.preventDefault()
-    dispatch(updateProfile(form))
+    if (!validate()) return
+    dispatch(updateProfile({
+      name:   form.name,
+      email:  form.email,
+      avatar: form.avatar,
+      bio:    form.bio,
+      phone:  form.phone,
+      dni:    form.dni?.trim(),
+      cbu:    form.cbu?.trim(),
+    }))
     setSaved(true)
   }
 
   const isArtist = String(user?.role).toLowerCase() === 'artist'
+  const fmtInputError = (key)=> errors[key] ? '!border-red-300 focus:!ring-red-200' : ''
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -104,6 +134,40 @@ export default function Profile(){
               value={form.phone}
               onChange={onChange}
             />
+          </div>
+
+          {/* DNI */}
+          <div>
+            <label className="form-label" htmlFor="dni">DNI</label>
+            <input
+              id="dni"
+              name="dni"
+              inputMode="numeric"
+              autoComplete="off"
+              className={`input ${fmtInputError('dni')}`}
+              placeholder="Solo números — ej: 30123456"
+              value={form.dni}
+              onChange={(e)=> onChange({ target: { name: 'dni', value: e.target.value.replace(/[^\d]/g,'') } })}
+              maxLength={9}
+            />
+            {errors.dni && <p className="text-xs text-red-600 mt-1">{errors.dni}</p>}
+          </div>
+
+          {/* CBU */}
+          <div>
+            <label className="form-label" htmlFor="cbu">CBU</label>
+            <input
+              id="cbu"
+              name="cbu"
+              inputMode="numeric"
+              autoComplete="off"
+              className={`input ${fmtInputError('cbu')}`}
+              placeholder="22 dígitos sin guiones — ej: 2850590940090418135201"
+              value={form.cbu}
+              onChange={(e)=> onChange({ target: { name: 'cbu', value: e.target.value.replace(/[^\d]/g,'') } })}
+              maxLength={22}
+            />
+            {errors.cbu && <p className="text-xs text-red-600 mt-1">{errors.cbu}</p>}
           </div>
 
           <div className="pt-2">
