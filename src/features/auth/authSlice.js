@@ -18,15 +18,26 @@ const initialState = {
 export const register = createAsyncThunk('auth/register', async (payload, { rejectWithValue })=>{
   try{
     if (isMock) {
-      return await mock.register(payload)
+      // eslint-disable-next-line no-console
+      console.log('[auth/register][MOCK] payload', { ...payload, password: '***' })
+      const data = await mock.register(payload)
+      // eslint-disable-next-line no-console
+      console.log('[auth/register][MOCK] response', data)
+      return data
     }
     // Backend real
+    // eslint-disable-next-line no-console
+    console.log('[auth/register][REAL] payload', { ...payload, password: '***' })
     const data = await authService.register(payload) // { token, user }
+    // eslint-disable-next-line no-console
+    console.log('[auth/register][REAL] response', data)
     if (data?.token) setAuthToken(data.token)
     if (data?.token) localStorage.setItem('token', data.token)
     if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
     return data
   }catch(err){
+    // eslint-disable-next-line no-console
+    console.error('[auth/register] error', err.response?.data || err.message)
     return rejectWithValue(err.response?.data?.message || err.message || 'Error')
   }
 })
@@ -34,7 +45,8 @@ export const register = createAsyncThunk('auth/register', async (payload, { reje
 export const login = createAsyncThunk('auth/login', async (payload, { rejectWithValue })=>{
   try{
     if (isMock) {
-      return await mock.login(payload)
+      const data = await mock.login(payload)
+      return data
     }
     // Backend real
     const data = await authService.login(payload) // { token, user }
@@ -43,6 +55,8 @@ export const login = createAsyncThunk('auth/login', async (payload, { rejectWith
     if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
     return data
   }catch(err){
+    // eslint-disable-next-line no-console
+    console.error('[auth/login] error', err.response?.data || err.message)
     return rejectWithValue(err.response?.data?.message || err.message || 'Error')
   }
 })
@@ -63,8 +77,9 @@ export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
   try{
     const user = await authService.me() // devuelve User
     return { token, user }
-  }catch{
-    // si falla, limpiamos session local
+  }catch(err){
+    // eslint-disable-next-line no-console
+    console.warn('[auth/loadUser] sin sesión o token inválido', err.response?.status || err.message)
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     setAuthToken(null)
