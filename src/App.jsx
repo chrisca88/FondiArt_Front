@@ -31,6 +31,12 @@ import ArtistDonate from './pages/donations/ArtistDonate.jsx'
 
 import SecondaryMarket from './pages/market/SecondaryMarket.jsx'
 
+// Proyectos
+import ProjectDetail from './pages/projects/ProjectDetail.jsx'
+import ProjectForm from './pages/projects/ProjectForm.jsx'
+import MyProjects from './pages/projects/MyProjects.jsx'          // NUEVO
+import ProjectEdit from './pages/projects/ProjectEdit.jsx'        // NUEVO
+
 export default function App(){
   return (
     <Routes>
@@ -53,9 +59,15 @@ export default function App(){
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />
 
-          {/* NEW: Donaciones (solo navegación; validad el rol desde el menú) */}
+          {/* Donaciones */}
           <Route path="/donaciones" element={<Donations/>} />
           <Route path="/donaciones/artista/:slug" element={<ArtistDonate/>} />
+
+          {/* Proyectos */}
+          <Route path="/mis-proyectos" element={<MyProjects/>} />
+          <Route path="/proyecto/:id" element={<ProjectDetail/>} />
+          <Route path="/proyecto/:id/editar" element={<ProjectEdit/>} />
+          <Route path="/proyectos/nuevo" element={<ProjectForm/>} />
 
           {/* Detalles de obra */}
           <Route path="/obra/:id" element={<ArtworkDetail/>} />

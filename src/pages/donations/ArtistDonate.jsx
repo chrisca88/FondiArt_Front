@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { getArtistProfile } from '../../services/mockArtists.js'
 import { donate } from '../../services/mockWallet.js'
+import { listByArtist as listProjects } from '../../services/mockProjects.js'
 
 export default function ArtistDonate(){
   const { slug } = useParams()
@@ -12,6 +13,7 @@ export default function ArtistDonate(){
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
+  const [projects, setProjects] = useState([])
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
@@ -24,6 +26,8 @@ export default function ArtistDonate(){
       if(!alive) return
       setData(p); setLoading(false)
     })
+    // cargar proyectos del artista
++    listProjects(slug).then(list => { if (alive) setProjects(list) })
     return ()=>{ alive = false }
   }, [slug])
 
@@ -106,6 +110,26 @@ export default function ArtistDonate(){
                 ))}
               </div>
             )}
+            {/* Proyectos del artista */}
+            <div className="mt-6">
+              <h3 className="text-lg font-bold">Proyectos del artista</h3>
+              {projects.length === 0 ? (
+                <p className="mt-2 text-slate-600">No hay proyectos publicados aún.</p>
+              ) : (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {projects.map(p=>(
+                    <article key={p.id} className="rounded-2xl ring-1 ring-slate-200 bg-white/70 overflow-hidden">
+                      <img src={p.cover} alt={p.title} className="w-full aspect-[4/3] object-cover"/>
+                      <div className="p-3">
+                        <div className="font-semibold line-clamp-1">{p.title}</div>
+                        <ProgressBar raised={p.raisedARS} goal={p.goalARS}/>
+                        <Link to={`/proyecto/${p.id}`} className="btn btn-outline w-full mt-2">Ver proyecto</Link>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -141,6 +165,19 @@ function SuccessModal({ message, onClose }){
         <p className="mt-1 text-slate-700">{message}</p>
         <button onClick={onClose} className="btn btn-primary mt-5 w-full">Aceptar</button>
       </div>
+    </div>
+  )
+}
+
+function ProgressBar({ raised=0, goal=0 }){
+  const pct = Math.min(100, Math.round((Number(raised)/Math.max(1,Number(goal)))*100))
+  const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
+  return (
+    <div className="mt-2">
+      <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+        <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }}/>
+      </div>
+      <div className="mt-1 text-xs text-slate-600">Recaudado ${fmt(raised)} de ${fmt(goal)} • {pct}%</div>
     </div>
   )
 }

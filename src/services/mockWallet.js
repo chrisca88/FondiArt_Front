@@ -114,8 +114,8 @@ export async function buyFractions(user, artworkId, qty){
 
 /* ===================== DONACIONES ===================== */
 
-/** Registra una donación y descuenta saldo en ARS */
-export async function donate(user, artistSlug, amount){
+/** Registra una donación y descuenta saldo en ARS (puede incluir projectId) */
+export async function donate(user, artistSlug, amount, projectId = null){
   const uid = user?.id || 'anon'
   seedIfEmpty(uid)
   const w = await getWallet(uid)
@@ -129,7 +129,13 @@ export async function donate(user, artistSlug, amount){
 
   const k = donationsKey(uid)
   const list = JSON.parse(localStorage.getItem(k) || '[]')
-  list.push({ id: `d${Date.now()}`, artistSlug, amount: v, ts: new Date().toISOString() })
+  list.push({
+    id: `d${Date.now()}`,
+    artistSlug,
+    projectId: projectId || null,
+    amount: v,
+    ts: new Date().toISOString(),
+  })
   localStorage.setItem(k, JSON.stringify(list))
 
   await sleep(120)
