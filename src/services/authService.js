@@ -66,10 +66,29 @@ async function me() {
   return data
 }
 
+/**
+ * GET /users/<user_id>/wallet/
+ * Devuelve la dirección de wallet del usuario.
+ * Intentamos mapear formatos comunes de respuesta para mayor robustez.
+ */
+async function getUserWalletAddress(userId) {
+  if (!userId) throw new Error('Falta userId')
+  const { data } = await client.get(`/users/${userId}/wallet/`)
+  // Normalizo posibles formas: {address}, {walletAddress}, {result:{address}}, string plano, etc.
+  const addr =
+    (typeof data === 'string' && data) ||
+    data?.address ||
+    data?.walletAddress ||
+    data?.result?.address ||
+    null
+  return { address: addr }
+}
+
 export default {
   client,
   register,
   login,
   me,
   setAuthToken,
+  getUserWalletAddress, // <- NUEVO
 }

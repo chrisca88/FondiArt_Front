@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import { getPortfolio } from '../../services/mockWallet.js'
+import authService from '../../services/authService.js'
 
 export default function Wallet(){
   const user = useSelector(s => s.auth.user)
@@ -10,6 +11,11 @@ export default function Wallet(){
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ balanceARS: 0, cashARS: 0, items: [] })
+
+  // Dirección de wallet (desde backend)
+  const [walletAddr, setWalletAddr] = useState(null)
+  const [addrLoading, setAddrLoading] = useState(true)
+  const [addrError, setAddrError] = useState('')
 
   // UI state
   const [q, setQ] = useState('')
@@ -25,6 +31,35 @@ export default function Wallet(){
     })
     return ()=>{ alive = false }
   }, [user])
+
+  // Traer dirección de wallet del backend al montar / al cambiar user.id
+  useEffect(()=>{
+    let alive = true
+    setAddrLoading(true)
+    setAddrError('')
+    setWalletAddr(null)
+
+    const uid = user?.id
+    if (!uid) {
+      setAddrLoading(false)
+      setAddrError('No hay usuario autenticado.')
+      return
+    }
+
+    authService.getUserWalletAddress(uid)
+      .then(({ address }) => {
+        if (!alive) return
+        setWalletAddr(address || null)
+        setAddrLoading(false)
+      })
+      .catch((e) => {
+        if (!alive) return
+        setAddrError(e?.response?.data?.message || e?.message || 'No se pudo obtener la dirección')
+        setAddrLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [user?.id])
 
   // búsqueda + filtro < $1 (solo tokens; ARS se muestra siempre)
   const filtered = useMemo(()=>{
@@ -55,12 +90,20 @@ export default function Wallet(){
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mi wallet</h1>
               <p className="lead mt-2 max-w-2xl">Resumen de tus tenencias y saldo disponible.</p>
 
-              {/* Dirección de wallet */}
+              {/* Dirección de wallet (desde backend) */}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                <code className="px-2 py-1 rounded bg-gray-100 border text-gray-700 select-all break-all">
-                  {user?.walletAddress || '(sin dirección)'}
-                </code>
-                {user?.walletAddress && <CopyButton text={user.walletAddress} />}
+                {addrLoading ? (
+                  <span className="text-slate-500">Obteniendo dirección…</span>
+                ) : addrError ? (
+                  <span className="text-red-600">{addrError}</span>
+                ) : (
+                  <>
+                    <code className="px-2 py-1 rounded bg-gray-100 border text-gray-700 select-all break-all">
+                      {walletAddr || '(sin dirección)'}
+                    </code>
+                    {walletAddr && <CopyButton text={walletAddr} />}
+                  </>
+                )}
               </div>
             </div>
 
