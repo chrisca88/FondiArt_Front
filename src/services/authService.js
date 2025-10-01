@@ -8,6 +8,12 @@ const client = axios.create({
   withCredentials: false,
 })
 
+// ✅ Al cargar el servicio, si ya hay token guardado, lo ponemos en el header
+const bootToken = localStorage.getItem('token')
+if (bootToken) {
+  client.defaults.headers.common['Authorization'] = `Bearer ${bootToken}`
+}
+
 // Interceptores de LOG (solo en dev)
 if (import.meta.env.DEV) {
   client.interceptors.request.use((config) => {
@@ -42,21 +48,13 @@ export function setAuthToken(token) {
 
 /** POST /auth/register/ -> { token, user } */
 async function register(payload) {
-  // eslint-disable-next-line no-console
-  console.log('[authService.register] payload', { ...payload, password: '***' })
   const { data } = await client.post('/auth/register/', payload)
-  // eslint-disable-next-line no-console
-  console.log('[authService.register] response', data)
   return data
 }
 
 /** POST /auth/login/ -> { token, user } */
 async function login(payload) {
-  // eslint-disable-next-line no-console
-  console.log('[authService.login] payload', { ...payload, password: '***' })
   const { data } = await client.post('/auth/login/', payload)
-  // eslint-disable-next-line no-console
-  console.log('[authService.login] response', data)
   return data
 }
 

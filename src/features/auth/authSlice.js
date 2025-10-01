@@ -18,13 +18,16 @@ const initialState = {
   error : null,
 }
 
-// Normaliza el objeto usuario para garantizar user.id
+// ✅ Normaliza el objeto usuario para garantizar user.id
 function normalizeUser(u) {
   if (!u) return u
-  const id =
-    u.id ?? u.user_id ?? u.userId ?? u.pk ?? u.uuid ?? u.uid ?? null
+  const id = u.id ?? u.user_id ?? u.userId ?? u.pk ?? u.uuid ?? u.uid ?? null
   return { ...u, id }
 }
+
+// ✅ Al cargar el slice, si ya había token, lo colocamos en axios
+const bootToken = localStorage.getItem('token')
+if (bootToken) setAuthToken(bootToken)
 
 /* ============ THUNKS ============ */
 export const register = createAsyncThunk('auth/register', async (payload, { rejectWithValue })=>{
@@ -41,7 +44,7 @@ export const register = createAsyncThunk('auth/register', async (payload, { reje
     if (user)        localStorage.setItem('user', JSON.stringify(user))
     return { ...data, user }
   }catch(err){
-    return rejectWithValue(err.response?.data?.message || err.message || 'Error')
+    return rejectWithValue(err?.response?.data?.message || err.message || 'Error')
   }
 })
 
@@ -54,12 +57,12 @@ export const login = createAsyncThunk('auth/login', async (payload, { rejectWith
     // Backend real
     const data = await authService.login(payload) // { token, user }
     const user = normalizeUser(data?.user)
-    if (data?.token) setAuthToken(data.token)
+    if (data?.token) setAuthToken(data.token)                 // ✅ pone Authorization
     if (data?.token) localStorage.setItem('token', data.token)
     if (user)        localStorage.setItem('user', JSON.stringify(user))
     return { ...data, user }
   }catch(err){
-    return rejectWithValue(err.response?.data?.message || err.message || 'Error')
+    return rejectWithValue(err?.response?.data?.message || err.message || 'Error')
   }
 })
 
@@ -75,7 +78,7 @@ export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
   }
   // Backend real: intenta cargar el perfil con el token guardado
   const token = localStorage.getItem('token') || null
-  if (token) setAuthToken(token)
+  if (token) setAuthToken(token) // ✅ asegura header tras refresh
   const user = await authService.me() // devuelve User
   const normalized = normalizeUser(user)
   return { token, user: normalized }
@@ -94,14 +97,12 @@ const authSlice = createSlice({
       try { mock.logout?.() } catch {}
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      setAuthToken(null)
+      setAuthToken(null) // ✅ limpia el header Authorization
     },
     // Actualiza campos del perfil (mock) y persiste en localStorage
     updateProfile(state, action){
       if (!state.user) return
-      state.user = { ...state.user, ...action.payload }
-      // Siempre asegurar que tenga "id"
-      state.user = normalizeUser(state.user)
+      state.user = normalizeUser({ ...state.user, ...action.payload })
       localStorage.setItem('user', JSON.stringify(state.user))
     },
   },
@@ -110,7 +111,6 @@ const authSlice = createSlice({
       state.status = 'succeeded'
       state.error  = null
       state.token  = action.payload?.token ?? state.token
-      // Normalizar también por si llegó por otra rama
       state.user   = normalizeUser(action.payload?.user ?? state.user)
     }
     const pending  = (state)=>{ state.status = 'loading'; state.error = null }
