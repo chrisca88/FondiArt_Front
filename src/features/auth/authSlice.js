@@ -3,9 +3,13 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import * as mock from '../../services/mockAuth.js'
 import authService, { setAuthToken } from '../../services/authService.js'
 
+// Si NO se explicitó VITE_MOCK_AUTH, pero HAY VITE_API_URL, por defecto usamos backend real.
+const envMock = String(import.meta.env.VITE_MOCK_AUTH ?? '').toLowerCase()
+const hasApiUrl = !!import.meta.env.VITE_API_URL
 const isMock =
-  String(import.meta.env.VITE_MOCK_AUTH ?? '1').toLowerCase() !== '0' &&
-  String(import.meta.env.VITE_MOCK_AUTH ?? '1').toLowerCase() !== 'false'
+  envMock === '1' || envMock === 'true' ? true
+  : envMock === '0' || envMock === 'false' ? false
+  : !hasApiUrl // si hay API_URL → real; si no hay → mock
 
 const initialState = {
   token : localStorage.getItem('token') || null,
@@ -14,30 +18,29 @@ const initialState = {
   error : null,
 }
 
+// Normaliza el objeto usuario para garantizar user.id
+function normalizeUser(u) {
+  if (!u) return u
+  const id =
+    u.id ?? u.user_id ?? u.userId ?? u.pk ?? u.uuid ?? u.uid ?? null
+  return { ...u, id }
+}
+
 /* ============ THUNKS ============ */
 export const register = createAsyncThunk('auth/register', async (payload, { rejectWithValue })=>{
   try{
     if (isMock) {
-      // eslint-disable-next-line no-console
-      console.log('[auth/register][MOCK] payload', { ...payload, password: '***' })
       const data = await mock.register(payload)
-      // eslint-disable-next-line no-console
-      console.log('[auth/register][MOCK] response', data)
       return data
     }
     // Backend real
-    // eslint-disable-next-line no-console
-    console.log('[auth/register][REAL] payload', { ...payload, password: '***' })
     const data = await authService.register(payload) // { token, user }
-    // eslint-disable-next-line no-console
-    console.log('[auth/register][REAL] response', data)
+    const user = normalizeUser(data?.user)
     if (data?.token) setAuthToken(data.token)
     if (data?.token) localStorage.setItem('token', data.token)
-    if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
-    return data
+    if (user)        localStorage.setItem('user', JSON.stringify(user))
+    return { ...data, user }
   }catch(err){
-    // eslint-disable-next-line no-console
-    console.error('[auth/register] error', err.response?.data || err.message)
     return rejectWithValue(err.response?.data?.message || err.message || 'Error')
   }
 })
@@ -50,13 +53,12 @@ export const login = createAsyncThunk('auth/login', async (payload, { rejectWith
     }
     // Backend real
     const data = await authService.login(payload) // { token, user }
+    const user = normalizeUser(data?.user)
     if (data?.token) setAuthToken(data.token)
     if (data?.token) localStorage.setItem('token', data.token)
-    if (data?.user)  localStorage.setItem('user', JSON.stringify(data.user))
-    return data
+    if (user)        localStorage.setItem('user', JSON.stringify(user))
+    return { ...data, user }
   }catch(err){
-    // eslint-disable-next-line no-console
-    console.error('[auth/login] error', err.response?.data || err.message)
     return rejectWithValue(err.response?.data?.message || err.message || 'Error')
   }
 })
@@ -74,17 +76,9 @@ export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
   // Backend real: intenta cargar el perfil con el token guardado
   const token = localStorage.getItem('token') || null
   if (token) setAuthToken(token)
-  try{
-    const user = await authService.me() // devuelve User
-    return { token, user }
-  }catch(err){
-    // eslint-disable-next-line no-console
-    console.warn('[auth/loadUser] sin sesión o token inválido', err.response?.status || err.message)
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    setAuthToken(null)
-    throw new Error('No hay sesión')
-  }
+  const user = await authService.me() // devuelve User
+  const normalized = normalizeUser(user)
+  return { token, user: normalized }
 })
 
 /* ============ SLICE ============ */
@@ -106,6 +100,8 @@ const authSlice = createSlice({
     updateProfile(state, action){
       if (!state.user) return
       state.user = { ...state.user, ...action.payload }
+      // Siempre asegurar que tenga "id"
+      state.user = normalizeUser(state.user)
       localStorage.setItem('user', JSON.stringify(state.user))
     },
   },
@@ -114,7 +110,8 @@ const authSlice = createSlice({
       state.status = 'succeeded'
       state.error  = null
       state.token  = action.payload?.token ?? state.token
-      state.user   = action.payload?.user  ?? state.user
+      // Normalizar también por si llegó por otra rama
+      state.user   = normalizeUser(action.payload?.user ?? state.user)
     }
     const pending  = (state)=>{ state.status = 'loading'; state.error = null }
     const rejected = (state, action)=>{ state.status = 'failed'; state.error = action.payload || 'Error' }
@@ -138,7 +135,7 @@ const authSlice = createSlice({
         state.error  = null
         if (action.payload){
           state.token = action.payload.token ?? state.token
-          state.user  = action.payload.user  ?? state.user
+          state.user  = normalizeUser(action.payload.user  ?? state.user)
         }
       })
       .addCase(loadUser.rejected, rejected)

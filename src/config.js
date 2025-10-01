@@ -1,4 +1,19 @@
 // src/config.js
 // URL base del backend. Podés sobreescribirla con VITE_API_URL en .env
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:80';
+// Normalizamos: sin barra final, y si quedó :8000 en localhost lo pasamos a 80 (implícito).
+function normalizeBaseUrl(raw) {
+  const fallback = 'http://localhost'; // puerto 80 implícito
+  if (!raw || typeof raw !== 'string') return fallback;
+
+  let url = raw.trim().replace(/\/+$/,''); // sin barra al final
+
+  // Si alguien dejó explícito el :8000, forzamos a localhost "normal" (80 implícito)
+  if (url === 'http://localhost:8000' || url === 'http://127.0.0.1:8000') {
+    return 'http://localhost';
+  }
+
+  return url;
+}
+
+const API_URL = normalizeBaseUrl(import.meta.env.VITE_API_URL || '');
 export default API_URL;

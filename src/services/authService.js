@@ -4,7 +4,7 @@ import API_URL from '../config'
 
 // Cliente axios con baseURL según tu Swagger: .../api/v1
 const client = axios.create({
-  baseURL: `${API_URL}/api/v1`,
+  baseURL: `${API_URL.replace(/\/+$/,'')}/api/v1`,
   withCredentials: false,
 })
 
@@ -74,7 +74,6 @@ async function me() {
 async function getUserWalletAddress(userId) {
   if (!userId) throw new Error('Falta userId')
   const { data } = await client.get(`/users/${userId}/wallet/`)
-  // Normalizo posibles formas: {address}, {walletAddress}, {result:{address}}, string plano, etc.
   const addr =
     (typeof data === 'string' && data) ||
     data?.address ||
@@ -90,5 +89,5 @@ export default {
   login,
   me,
   setAuthToken,
-  getUserWalletAddress, // <- NUEVO
+  getUserWalletAddress,
 }

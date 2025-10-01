@@ -39,10 +39,18 @@ export default function Wallet(){
     setAddrError('')
     setWalletAddr(null)
 
-    const uid = user?.id
+    const uid = getBackendUserId(user)
+
     if (!uid) {
       setAddrLoading(false)
       setAddrError('No hay usuario autenticado.')
+      return
+    }
+
+    // Si todavía estamos con ID de MOCK (ej. "u123..."), abortamos y avisamos.
+    if (typeof uid === 'string' && /^u\d+/.test(uid)) {
+      setAddrLoading(false)
+      setAddrError('Sesión de demostración activa. Iniciá sesión real para ver tu dirección de wallet.')
       return
     }
 
@@ -173,6 +181,12 @@ export default function Wallet(){
       </div>
     </section>
   )
+}
+
+/* -------------------- Helpers -------------------- */
+function getBackendUserId(u){
+  // Tomamos el id del backend, cualquiera sea su nombre.
+  return u?.id ?? u?.user_id ?? u?.userId ?? u?.pk ?? null
 }
 
 /* -------------------- Filas -------------------- */
