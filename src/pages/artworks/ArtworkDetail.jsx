@@ -9,6 +9,15 @@ import {
 } from '../../services/mockArtworks.js'
 import { buyFractions } from '../../services/mockWallet.js'
 
+// helper para generar el slug del artista (igual que en mocks)
+const slugify = (s = '') =>
+  String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+
 export default function ArtworkDetail(){
   const { id } = useParams()
   const navigate = useNavigate()
@@ -24,7 +33,7 @@ export default function ArtworkDetail(){
   const canRate = !!user && user.role === 'buyer'
   const canBuy  = !!user && user.role === 'buyer'
 
-  // --- NUEVO: compra (modal)
+  // --- compra (modal)
   const [buyOpen, setBuyOpen] = useState(false)
   const [qty, setQty] = useState(1)
   const [buying, setBuying] = useState(false)
@@ -57,7 +66,7 @@ export default function ArtworkDetail(){
     return Math.round(100 - (data.fractionsLeft / data.fractionsTotal) * 100)
   }, [data])
 
-  // --- NUEVO: formateo de fecha de subasta (YYYY-MM-DD -> DD/MM/YYYY)
+  // --- formateo de fecha de subasta (YYYY-MM-DD -> DD/MM/YYYY)
   const auctionDateText = useMemo(()=>{
     const iso = data?.auctionDate
     if (!iso) return null
@@ -77,6 +86,8 @@ export default function ArtworkDetail(){
     </section>
   )
   if (!data) return null
+
+  const artistSlug = slugify(data.artist || '')
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -114,12 +125,24 @@ export default function ArtworkDetail(){
           <aside className="lg:col-span-2">
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold">
+                {/* Avatar clickeable -> perfil del artista */}
+                <Link
+                  to={`/donaciones/artista/${artistSlug}`}
+                  className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold ring-1 ring-transparent hover:ring-indigo-400 transition"
+                  title="Ver perfil del artista"
+                >
                   {data.artist.split(' ').map(s=>s[0]).slice(0,2).join('')}
-                </div>
+                </Link>
                 <div>
                   <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
-                  <p className="text-slate-600">{data.artist}</p>
+                  {/* Nombre clickeable -> perfil del artista */}
+                  <Link
+                    to={`/donaciones/artista/${artistSlug}`}
+                    className="text-slate-600 hover:text-indigo-600 hover:underline"
+                    title="Ver perfil del artista"
+                  >
+                    {data.artist}
+                  </Link>
                   <div className="mt-1 flex items-center gap-1 text-amber-500">
                     <Star className="h-4 w-4"/>
                     <span className="text-sm font-semibold">
@@ -138,7 +161,7 @@ export default function ArtworkDetail(){
                 <Metric label="Vend." value={`${soldPct}%`} />
               </div>
 
-              {/* NUEVO: fecha de subasta visible para compradores */}
+              {/* fecha de subasta visible para compradores */}
               <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
                 <CalendarIcon className="h-5 w-5 text-slate-500" />
                 <span><strong>Subasta:</strong> {auctionDateText || 'A definir'}</span>
@@ -213,7 +236,7 @@ export default function ArtworkDetail(){
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
-              {/* NUEVO: fecha de subasta también en ficha técnica */}
+              {/* fecha de subasta también en ficha técnica */}
               <li><strong>Subasta:</strong> {auctionDateText || 'A definir'}</li>
               <li><strong>Rating:</strong> {rating.avg || data.rating || 0}</li>
             </ul>
