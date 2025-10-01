@@ -88,6 +88,7 @@ export default function ArtworkDetail(){
   if (!data) return null
 
   const artistSlug = slugify(data.artist || '')
+  const isAuctioned = data.status === 'auctioned'
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -213,11 +214,12 @@ export default function ArtworkDetail(){
 
               <div className="flex gap-2 pt-2">
                 <button
-                  className="btn btn-primary flex-1 disabled:opacity-60"
-                  disabled={!canBuy}
+                  className={`btn flex-1 disabled:opacity-60 ${isAuctioned ? 'btn-outline' : 'btn-primary'}`}
+                  disabled={!canBuy || isAuctioned}
                   onClick={()=> setBuyOpen(true)}
+                  title={isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción'}
                 >
-                  Comprar fracción
+                  {isAuctioned ? 'Obra subastada' : 'Comprar fracción'}
                 </button>
                 <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
               </div>

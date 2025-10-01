@@ -16,7 +16,7 @@ const seed = [
     tags: ['Abstracto', 'Acrílico'],
     rating: 4.8,
     createdAt: '2025-07-12',
-    // sin status => se considera "approved" para compatibilidad
+    // sin status => "approved" por compat
   },
   {
     id: 'a2',
@@ -189,13 +189,13 @@ function seedIfEmpty() {
   }
 }
 
-/** Lista para el marketplace: solo obras aprobadas */
+/** Lista para el marketplace: solo obras aprobadas (excluye subastadas) */
 export async function listArtworks({ q = '', sort = 'relevance' } = {}) {
   seedIfEmpty();
   await sleep();
   let items = JSON.parse(localStorage.getItem(KEY) || '[]');
 
-  // mostrar solo aprobadas (las que no tienen status explícito se consideran aprobadas)
+  // Solo aprobadas visibles en marketplace (no 'auctioned')
   items = items.filter((x) => (x.status || 'approved') === 'approved');
 
   if (q) {
@@ -217,7 +217,7 @@ export async function listArtworks({ q = '', sort = 'relevance' } = {}) {
   return items.map(withDefaults);
 }
 
-/** Lista las obras del artista (todas: pendientes y aprobadas) */
+/** Lista las obras del artista (todas: pendientes y aprobadas y subastadas) */
 export async function listMyArtworks(user) {
   seedIfEmpty();
   await sleep(200);
@@ -258,7 +258,7 @@ export async function createArtwork({
     rating: 0,
     ratings: { by: {}, count: 0, avg: 0 },
     createdAt: new Date().toISOString().slice(0, 10),
-    status: 'pending', // 👈 NUEVO: arranca pendiente
+    status: 'pending', // arranca pendiente
     gallery:
       Array.isArray(gallery) && gallery.length
         ? gallery
@@ -300,7 +300,7 @@ export async function updateArtwork(id, updates = {}) {
         : [prev.image, ...GALLERY_FALLBACK.slice(0, 2)],
   };
 
-  ensureRatings(merged); // mantenemos/normalizamos ratings
+  ensureRatings(merged);
   list[idx] = merged;
   saveList(list);
   return withDefaults(merged);
@@ -315,8 +315,7 @@ export async function getArtworkById(id) {
   return withDefaults(found);
 }
 
-/* ---------------- VENTA DE FRACCIONES (para compras) ---------------- */
-/** Disminuye de manera segura las fracciones disponibles */
+/* ---------------- VENTA DE FRACCIONES ---------------- */
 export async function sellFractions(id, qty){
   seedIfEmpty();
   await sleep(120);
@@ -335,8 +334,6 @@ export async function sellFractions(id, qty){
 }
 
 /* ---------------- Rating API pública ---------------- */
-
-/** Devuelve promedio, cantidad y (si pasa userId) la valoración propia */
 export async function getArtworkRating(artworkId, userId) {
   seedIfEmpty();
   await sleep(120);
@@ -348,7 +345,6 @@ export async function getArtworkRating(artworkId, userId) {
   return { avg: it.ratings.avg, count: it.ratings.count, my };
 }
 
-/** Graba/actualiza la valoración del usuario y recalcula promedio */
 export async function rateArtwork(artworkId, userId, value) {
   seedIfEmpty();
   await sleep(100);
@@ -373,8 +369,6 @@ export async function rateArtwork(artworkId, userId, value) {
 }
 
 /* ---------------- Admin helpers ---------------- */
-
-/** Lista SOLO obras pendientes (compat) */
 export async function listPendingArtworks() {
   seedIfEmpty();
   await sleep(200);
@@ -384,9 +378,8 @@ export async function listPendingArtworks() {
   return pending.map(withDefaults);
 }
 
-/** NUEVO: listado para admin con filtro de estado */
 export async function adminListArtworks({ status = 'pending', q = '' } = {}) {
-  // status: 'pending' | 'approved' | 'all'
+  // status: 'pending' | 'approved' | 'auctioned' | 'all'
   seedIfEmpty();
   await sleep(200);
   let list = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -411,9 +404,8 @@ export async function adminListArtworks({ status = 'pending', q = '' } = {}) {
   return list.map(withDefaults);
 }
 
-/** NUEVO: cambia el estado (pendiente/aprobada) */
 export async function setArtworkStatus(id, status) {
-  const allowed = ['pending', 'approved'];
+  const allowed = ['pending', 'approved']; // cerrar subasta usa closeAuction()
   if (!allowed.includes(status)) throw new Error('Estado inválido');
 
   seedIfEmpty();
@@ -424,6 +416,81 @@ export async function setArtworkStatus(id, status) {
   if (idx === -1) throw new Error('Obra no encontrada');
 
   list[idx].status = status;
+  saveList(list);
+  return withDefaults(list[idx]);
+}
+
+/* ==================== Subastas (admin) ==================== */
+const todayISO = () => new Date().toISOString().slice(0,10);
+
+/** Lista obras por categoría de subasta */
+export async function listAuctions(filter = 'today') {
+  // filter: 'today' | 'upcoming' | 'finished' | 'all'
+  seedIfEmpty();
+  await sleep(150);
+
+  const t = todayISO();
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+
+  const isApproved = (it) => (it.status || 'approved') === 'approved';
+  const isAuctioned = (it) => it.status === 'auctioned';
+  const date = (it) => String(it.auctionDate || '');
+
+  let out = list;
+  if (filter === 'today') {
+    out = list.filter((it) => isApproved(it) && date(it) === t);
+  } else if (filter === 'upcoming') {
+    out = list.filter((it) => isApproved(it) && date(it) > t);
+  } else if (filter === 'finished') {
+    out = list.filter((it) => isAuctioned(it));
+  }
+
+  // orden útil: por fecha asc, y las finalizadas por soldAt desc
+  if (filter === 'finished') {
+    out.sort((a,b)=> new Date(b.auction?.soldAt || b.createdAt) - new Date(a.auction?.soldAt || a.createdAt));
+  } else {
+    out.sort((a,b)=> String(a.auctionDate||'') > String(b.auctionDate||'') ? 1 : -1);
+  }
+
+  return out.map(withDefaults);
+}
+
+export async function getAuctionById(id) {
+  return getArtworkById(id); // alias semántico
+}
+
+/** Cierra una subasta, guarda ganador y marca como subastada */
+export async function closeAuction(id, { winnerName, winnerDni, finalPrice }) {
+  seedIfEmpty();
+  await sleep(180);
+
+  const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const idx = list.findIndex((i) => i.id === id);
+  if (idx === -1) throw new Error('Obra no encontrada');
+
+  const it = list[idx];
+
+  // ✅ Validación: no permitir cerrar antes de la fecha de subasta
+  const auctionDate = String(it.auctionDate || '');
+  if (!auctionDate) {
+    throw new Error('La obra no tiene fecha de subasta asignada.');
+  }
+  const today = todayISO();
+  if (today < auctionDate) {
+    throw new Error(`La subasta solo puede cerrarse el día ${auctionDate}.`);
+  }
+
+  list[idx] = {
+    ...it,
+    status: 'auctioned',
+    auction: {
+      winnerName: (winnerName || '').trim(),
+      winnerDni: (winnerDni || '').trim(),
+      finalPrice: Number(finalPrice) || 0,
+      soldAt: new Date().toISOString(),
+    },
+  };
+
   saveList(list);
   return withDefaults(list[idx]);
 }

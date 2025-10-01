@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { listByOwner } from '../../services/mockProjects.js'
+import { listByOwner, listByArtist } from '../../services/mockProjects.js'
 
 export default function MyProjects(){
   const user = useSelector(s => s.auth.user)
@@ -13,13 +13,29 @@ export default function MyProjects(){
 
   useEffect(()=>{
     let alive = true
-    setLoading(true)
-    listByOwner(user?.id).then(list=>{
-      if(!alive) return
-      setItems(list); setLoading(false)
-    })
+    async function load(){
+      setLoading(true)
+      try{
+        // 1) Intento por ownerId (caso “ideal”)
+        const byOwner = await listByOwner(user?.id)
+
+        // 2) Fallback/merge por artista (por si el ownerId no coincide o falta)
+        const slug = slugify(user?.name || '')
+        const byArtist = slug ? await listByArtist(slug) : []
+
+        // Unir sin duplicados por id (por si coinciden)
+        const map = new Map()
+        for (const p of [...byOwner, ...byArtist]) map.set(p.id, p)
+
+        if (!alive) return
+        setItems([...map.values()])
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+    load()
     return ()=>{ alive = false }
-  }, [user?.id])
+  }, [user?.id, user?.name])
 
   const view = useMemo(()=>{
     const s = q.trim().toLowerCase()
@@ -107,6 +123,15 @@ export default function MyProjects(){
 }
 
 function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
+
+function slugify(s = ''){
+  return String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
 
 function Skeleton(){
   return (

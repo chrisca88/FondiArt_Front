@@ -1,5 +1,5 @@
 // src/pages/projects/ProjectDetail.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { getById as getProjectById, addDonation } from '../../services/mockProjects.js'
@@ -15,6 +15,7 @@ export default function ProjectDetail(){
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
+  const [okMsg, setOkMsg] = useState('')
   const [err, setErr] = useState('')
 
   useEffect(()=>{
@@ -27,20 +28,37 @@ export default function ProjectDetail(){
     return ()=>{ alive = false }
   }, [id, navigate])
 
-  const pct = p ? Math.min(100, Math.round((Number(p.raisedARS || 0)/Math.max(1,Number(p.goalARS||0)))*100)) : 0
+  const goal = useMemo(()=> Number(p?.goalARS || 0), [p?.goalARS])
+  const raised = useMemo(()=> Number(p?.raisedARS || 0), [p?.raisedARS])
+  const remaining = useMemo(()=> Math.max(0, goal - raised), [goal, raised])
+
+  const pct = p ? Math.min(100, Math.round((raised/Math.max(1,goal))*100)) : 0
   const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
   async function onDonate(){
     setErr('')
-    const v = Number(amount)
-    if (!v || v <= 0){ setErr('Ingresá un monto válido.'); return }
+    const entered = Number(amount)
+    if (!entered || entered <= 0){ setErr('Ingresá un monto válido.'); return }
+
+    // Tope: no permitir superar la meta
+    const applied = Math.min(entered, remaining)
+    if (applied <= 0){
+      setErr('Este proyecto ya alcanzó la meta.')
+      return
+    }
+
     setSaving(true)
     try{
-      // descuenta de la wallet y registra donación (ahora acepta projectId opcional)
-      await donate(user, p.artistSlug, v, p.id)
-      // suma al proyecto
-      const next = await addDonation(p.id, v)
+      // 1) Descontar exactamente lo aplicado
+      await donate(user, p.artistSlug, applied, p.id)
+      // 2) Sumar exactamente lo aplicado al proyecto (con tope en servicio)
+      const next = await addDonation(p.id, applied)
       setP(next)
+      setOkMsg(
+        applied < entered
+          ? `¡Gracias por apoyar este proyecto! Se aplicaron $${fmt(applied)} hasta completar la meta.`
+          : `¡Gracias por apoyar este proyecto! Se descontó $${fmt(applied)} de tu wallet.`
+      )
       setOk(true)
       setAmount('')
     }catch(e){
@@ -52,6 +70,8 @@ export default function ProjectDetail(){
 
   if (loading) return <section className="section-frame py-16"><div className="h-48 bg-slate-200/70 animate-pulse rounded-3xl"/></section>
   if (!p) return null
+
+  const goalReached = remaining <= 0
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -83,19 +103,38 @@ export default function ProjectDetail(){
                 <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
               </div>
               <div className="mt-1 text-sm text-slate-600">
-                Recaudado <span className="font-semibold">${fmt(p.raisedARS)}</span> de ${fmt(p.goalARS)} — {pct}%.
+                Recaudado <span className="font-semibold">${fmt(raised)}</span> de ${fmt(goal)} — {pct}%.
               </div>
               <div className="text-xs text-slate-500">{p.backers} aportes</div>
+              {goalReached ? (
+                <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
+                  ¡Meta alcanzada! Gracias por tu apoyo.
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-600">
+                  Faltan <strong>${fmt(remaining)}</strong> para llegar a la meta.
+                </div>
+              )}
             </div>
 
             <div className="mt-5">
               <label className="form-label">Monto a donar (ARS)</label>
               <input
-                type="number" min={0} className="input" placeholder="Ej. 1000"
-                value={amount} onChange={e=>setAmount(e.target.value)}
+                type="number"
+                min={0}
+                max={remaining || undefined}
+                className="input"
+                placeholder="Ej. 1000"
+                value={amount}
+                onChange={e=>setAmount(e.target.value)}
+                disabled={goalReached}
               />
               {err && <div className="text-sm text-red-600 mt-2">{err}</div>}
-              <button className="btn btn-primary w-full mt-3 disabled:opacity-60" onClick={onDonate} disabled={saving || !amount}>
+              <button
+                className="btn btn-primary w-full mt-3 disabled:opacity-60"
+                onClick={onDonate}
+                disabled={saving || !amount || goalReached}
+              >
                 {saving ? 'Procesando…' : 'Donar al proyecto'}
               </button>
               <Link to={`/donaciones/artista/${p.artistSlug}`} className="btn btn-outline w-full mt-2">Volver al artista</Link>
@@ -106,7 +145,7 @@ export default function ProjectDetail(){
 
       {ok && (
         <SuccessModal
-          message="¡Gracias por apoyar este proyecto! Se descontó el saldo de tu wallet."
+          message={okMsg || '¡Gracias por apoyar este proyecto!'}
           onClose={()=> setOk(false)}
         />
       )}

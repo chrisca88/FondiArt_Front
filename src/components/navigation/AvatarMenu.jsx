@@ -29,6 +29,7 @@ export default function AvatarMenu({ user }) {
 
   const isArtist = user?.role === 'artist'
   const isBuyer  = user?.role === 'buyer'
+  const isAdmin  = user?.role === 'admin'
 
   return (
     <div className="relative" ref={ref}>
@@ -62,30 +63,27 @@ export default function AvatarMenu({ user }) {
           <div className="h-px bg-slate-200/70" />
 
           <nav className="py-1 text-sm">
-            {/* Ocultar Dashboard para artistas */}
+            {/* Dashboard para todos excepto artista (tu lógica original) */}
             {!isArtist && (
               <Link className="block px-4 py-2 hover:bg-slate-50" to="/dashboard" onClick={()=>setOpen(false)}>
                 Dashboard
               </Link>
             )}
 
-            {/* Wallet (todos los roles) */}
+            {/* Ítems generales */}
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/wallet" onClick={()=>setOpen(false)}>
               Wallet
             </Link>
 
-            {/* Mercado secundario (solo buyers; cambia a !isArtist si querés mostrarlo a todos) */}
             {isBuyer && (
-              <Link className="block px-4 py-2 hover:bg-slate-50" to="/mercado" onClick={()=>setOpen(false)}>
-                Mercado secundario
-              </Link>
-            )}
-
-            {/* Donaciones (solo compradores) */}
-            {isBuyer && (
-              <Link className="block px-4 py-2 hover:bg-slate-50" to="/donaciones" onClick={()=>setOpen(false)}>
-                Donaciones
-              </Link>
+              <>
+                <Link className="block px-4 py-2 hover:bg-slate-50" to="/mercado" onClick={()=>setOpen(false)}>
+                  Mercado secundario
+                </Link>
+                <Link className="block px-4 py-2 hover:bg-slate-50" to="/donaciones" onClick={()=>setOpen(false)}>
+                  Donaciones
+                </Link>
+              </>
             )}
 
             <Link className="block px-4 py-2 hover:bg-slate-50" to="/cuenta" onClick={()=>setOpen(false)}>
@@ -106,6 +104,16 @@ export default function AvatarMenu({ user }) {
                 </Link>
                 <Link className="block px-4 py-2 hover:bg-slate-50" to="/proyectos/nuevo" onClick={()=>setOpen(false)}>
                   Nuevo proyecto
+                </Link>
+              </>
+            )}
+
+            {/* SOLO ADMIN: acceso a subastas desde el menú */}
+            {isAdmin && (
+              <>
+                <div className="h-px bg-slate-200/70 my-1" />
+                <Link className="block px-4 py-2 hover:bg-slate-50" to="/admin/subastas" onClick={()=>setOpen(false)}>
+                  Gestionar subastas
                 </Link>
               </>
             )}

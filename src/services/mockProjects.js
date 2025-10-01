@@ -128,11 +128,14 @@ export async function createProject({ user, title, description, cover, goalARS }
   const artistName = user?.name || 'Artista';
   const artistSlug = slugifyName(artistName);
 
+  // ⚠️ ownerId robusto: si no hay user.id, uso alias estable por slug
+  const ownerId = user?.id || `owner-${artistSlug}`;
+
   const item = {
     id: 'prj-' + Date.now(),
     artistSlug,
     artistName,
-    ownerId: user?.id || null, // dueño real: el usuario autenticado
+    ownerId, // dueño real (o fallback determinístico)
     title: (title || 'Proyecto sin título').trim(),
     description: (description || '').trim(),
     cover: cover || fallbackImgs[Math.floor(Math.random()*fallbackImgs.length)],
@@ -169,7 +172,17 @@ export async function addDonation(projectId, amount) {
   const idx = list.findIndex(p => p.id === projectId);
   if (idx === -1) throw new Error('Proyecto no encontrado');
 
-  list[idx].raisedARS = Math.round((Number(list[idx].raisedARS || 0) + Number(amount || 0)) * 100) / 100;
+  const goal = Number(list[idx].goalARS || 0);
+  const current = Number(list[idx].raisedARS || 0);
+  const remaining = Math.max(0, goal - current);
+  const v = Math.max(0, Number(amount) || 0);
+  const applied = Math.min(v, remaining);
+
+  if (applied <= 0) {
+    throw new Error('El proyecto ya alcanzó la meta.');
+  }
+
+  list[idx].raisedARS = Math.round((current + applied) * 100) / 100;
   list[idx].backers = Number(list[idx].backers || 0) + 1;
   save(list);
   return list[idx];

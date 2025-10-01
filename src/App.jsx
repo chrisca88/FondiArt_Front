@@ -21,6 +21,8 @@ import ArtworkStats from './pages/artworks/ArtworkStats.jsx'
 // Admin
 import AdminDashboard from './pages/admin/AdminDashboard.jsx'
 import AdminArtworkReview from './pages/admin/AdminArtworkReview.jsx'
+import AdminAuctions from './pages/admin/auctions/AdminAuctions.jsx'     
+import AuctionDetail from './pages/admin/auctions/AuctionDetail.jsx'      
 
 // Wallet
 import Wallet from './pages/wallet/Wallet.jsx'
@@ -34,8 +36,8 @@ import SecondaryMarket from './pages/market/SecondaryMarket.jsx'
 // Proyectos
 import ProjectDetail from './pages/projects/ProjectDetail.jsx'
 import ProjectForm from './pages/projects/ProjectForm.jsx'
-import MyProjects from './pages/projects/MyProjects.jsx'          // NUEVO
-import ProjectEdit from './pages/projects/ProjectEdit.jsx'        // NUEVO
+import MyProjects from './pages/projects/MyProjects.jsx'
+import ProjectEdit from './pages/projects/ProjectEdit.jsx'
 
 export default function App(){
   return (
@@ -76,6 +78,8 @@ export default function App(){
           {/* Admin */}
           <Route path="/admin" element={<AdminDashboard/>} />
           <Route path="/admin/obra/:id" element={<AdminArtworkReview/>} />
+          <Route path="/admin/subastas" element={<AdminAuctions/>} />
+          <Route path="/admin/subasta/:id" element={<AuctionDetail/>} />
         </Route>
       </Route>
     </Routes>
