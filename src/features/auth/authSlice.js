@@ -3,6 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import * as mock from '../../services/mockAuth.js'
 import authService, { setAuthToken } from '../../services/authService.js'
 
+// Detección mock vs real
 const envMock = String(import.meta.env.VITE_MOCK_AUTH ?? '').toLowerCase()
 const hasApiUrl = !!import.meta.env.VITE_API_URL
 export const IS_MOCK =
@@ -17,16 +18,14 @@ const initialState = {
   error : null,
 }
 
-// Normaliza id y avatarUrl/avatar para el frontend
+// Normaliza id desde distintas claves
 function normalizeUser(u) {
   if (!u) return u
   const id = u.id ?? u.user_id ?? u.userId ?? u.pk ?? u.uuid ?? u.uid ?? null
-  const avatarUrl = u.avatarUrl ?? u.avatar ?? null
-  const avatar    = u.avatar ?? avatarUrl ?? null
-  return { ...u, id, avatarUrl, avatar }
+  return { ...u, id }
 }
 
-// ✅ token en axios al boot
+// ✅ inyecta el token en axios al boot si existe
 const bootToken = localStorage.getItem('token')
 if (bootToken) setAuthToken(bootToken)
 
@@ -64,7 +63,7 @@ export const login = createAsyncThunk('auth/login', async (payload, { rejectWith
     }
     const data = await authService.login(payload) // { token, user }
     const user = normalizeUser(data?.user)
-    if (data?.token) setAuthToken(data.token)
+    if (data?.token) setAuthToken(data.token)                 // ✅ Authorization
     if (data?.token) localStorage.setItem('token', data.token)
     if (user)        localStorage.setItem('user', JSON.stringify(user))
     if (import.meta.env.DEV) console.log('[login][REAL] token:', !!data?.token, 'user:', user)
@@ -90,36 +89,40 @@ export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
     return u
   }
   const token = localStorage.getItem('token') || null
-  if (token) setAuthToken(token)
+  if (token) setAuthToken(token) // ✅ asegura header tras refresh
   const user = await authService.me()
   const normalized = normalizeUser(user)
   if (import.meta.env.DEV) console.log('[loadUser][REAL] user:', normalized, 'hasToken:', !!token)
   return { token, user: normalized }
 })
 
-/** ✅ Guardar perfil (PATCH /users/me/) */
-export const saveProfile = createAsyncThunk('auth/saveProfile', async (payload, { getState, rejectWithValue })=>{
-  try{
-    if (IS_MOCK) {
-      const current = getState().auth.user || {}
-      const updated = normalizeUser({ ...current, ...payload })
-      await mock.updateMe?.(payload)
-      return { user: updated }
+/** Guarda el perfil en backend y MERGEA la respuesta con el usuario actual */
+export const saveProfile = createAsyncThunk(
+  'auth/saveProfile',
+  async (payload, { getState, rejectWithValue })=>{
+    try{
+      if (IS_MOCK) {
+        // modo demo: actualizar localmente
+        const prev = getState().auth.user || {}
+        const merged = normalizeUser({ ...prev, ...payload })
+        localStorage.setItem('user', JSON.stringify(merged))
+        if (import.meta.env.DEV) console.log('[saveProfile][MOCK] merged user:', merged)
+        return { user: merged }
+      }
+      // Backend real
+      const partial = await authService.updateMe(payload) // puede venir sin id / role
+      const prev = getState().auth.user || {}
+      const merged = normalizeUser({ ...prev, ...partial })
+      // Persisto sin tocar el token
+      localStorage.setItem('user', JSON.stringify(merged))
+      if (import.meta.env.DEV) console.log('[saveProfile][REAL] prev:', prev, 'partial:', partial, 'merged:', merged)
+      return { user: merged }
+    }catch(err){
+      if (import.meta.env.DEV) console.error('[saveProfile] error', err?.response?.data || err.message)
+      return rejectWithValue(err?.response?.data?.message || err.message || 'Error')
     }
-    // Mapeo seguro: si vino 'avatar' desde UI, convertir a 'avatarUrl'
-    const apiPayload = {
-      ...payload,
-      avatarUrl: payload.avatarUrl ?? payload.avatar ?? null,
-    }
-    delete apiPayload.avatar // evitar enviar 'avatar' si el backend no lo conoce
-    const data = await authService.updateMe(apiPayload)
-    const user = normalizeUser(data)
-    return { user }
-  }catch(err){
-    if (import.meta.env.DEV) console.error('[saveProfile] error', err?.response?.data || err.message)
-    return rejectWithValue(err?.response?.data?.message || err.message || 'Error al guardar el perfil')
   }
-})
+)
 
 /* ============ SLICE ============ */
 const authSlice = createSlice({
@@ -137,11 +140,12 @@ const authSlice = createSlice({
       setAuthToken(null)
       if (import.meta.env.DEV) console.log('[logout] done.')
     },
-    // (solo UI / demo) actualización local
+    // actualiza localmente (modo demo / UI)
     updateProfile(state, action){
       if (!state.user) return
-      state.user = normalizeUser({ ...state.user, ...action.payload })
-      localStorage.setItem('user', JSON.stringify(state.user))
+      const merged = normalizeUser({ ...state.user, ...action.payload })
+      state.user = merged
+      localStorage.setItem('user', JSON.stringify(merged))
       if (import.meta.env.DEV) console.log('[updateProfile] user:', state.user)
     },
   },
@@ -181,15 +185,13 @@ const authSlice = createSlice({
       })
       .addCase(loadUser.rejected, rejected)
 
-      // ✅ saveProfile -> actualiza store + localStorage
+      // saveProfile -> NO tocamos token; solo user
       .addCase(saveProfile.pending,  pending)
       .addCase(saveProfile.fulfilled, (state, action)=>{
         state.status = 'succeeded'
         state.error  = null
-        if (action.payload?.user) {
-          state.user = normalizeUser(action.payload.user)
-          localStorage.setItem('user', JSON.stringify(state.user))
-        }
+        if (action.payload?.user) state.user = normalizeUser(action.payload.user)
+        if (import.meta.env.DEV) console.log('[saveProfile/fulfilled] user:', state.user)
       })
       .addCase(saveProfile.rejected, rejected)
   }

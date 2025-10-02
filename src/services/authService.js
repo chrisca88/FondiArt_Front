@@ -7,7 +7,6 @@ function maskToken(t) { return t ? t.slice(0, 10) + '…' : '(none)' }
 const baseURL = `${API_URL.replace(/\/+$/, '')}/api/v1`
 const client = axios.create({ baseURL, withCredentials: false })
 
-// Token pegado al arrancar
 const bootToken = localStorage.getItem('token')
 if (bootToken) client.defaults.headers.common['Authorization'] = `Bearer ${bootToken}`
 
@@ -42,40 +41,20 @@ export function setAuthToken(token) {
   }
 }
 
-async function register(payload) {
-  const { data } = await client.post('/auth/register/', payload); return data
-}
-async function login(payload) {
-  const { data } = await client.post('/auth/login/', payload); return data
-}
-async function me() {
-  const { data } = await client.get('/auth/me/'); return data
-}
+async function register(payload) { const { data } = await client.post('/auth/register/', payload); return data }
+async function login(payload)    { const { data } = await client.post('/auth/login/', payload);    return data }
+async function me()              { const { data } = await client.get('/auth/me/');                 return data }
+
+/** PATCH /users/me/ — devuelve lo que tu API retorne (parcial o completo) */
 async function updateMe(payload) {
   const { data } = await client.patch('/users/me/', payload)
+  // puede venir { user: {...} } o {...} directo
   return data?.user ?? data
 }
 
-// Asegura que el Authorization esté seteado (por si algo lo perdió)
-function ensureAuthHeader(){
-  const h = client.defaults.headers?.common?.Authorization
-  if (!h) {
-    const t = localStorage.getItem('token')
-    if (t) {
-      client.defaults.headers.common['Authorization'] = `Bearer ${t}`
-      if (import.meta.env.DEV) console.log('[ensureAuthHeader] restored Authorization from LS:', maskToken(`Bearer ${t}`))
-    }
-  }
-}
-
-/**
- * POST /upload/ — sube a Cloudinary vía backend.
- * No seteamos Content-Type manualmente para no romper el boundary.
- */
+/** Upload de imagen (ya lo tenías) */
 async function uploadImage(file, options = {}, onProgress) {
   if (!file) throw new Error('Falta el archivo')
-  ensureAuthHeader()
-
   const fd = new FormData()
   fd.append('file', file)
   if (options.folder) fd.append('folder', options.folder)
@@ -86,24 +65,19 @@ async function uploadImage(file, options = {}, onProgress) {
       ? options.transformation
       : JSON.stringify(options.transformation))
   }
-
   const { data } = await client.post('/upload/', fd, {
-    // NO forzar Content-Type; axios lo arma con boundary
     onUploadProgress: (evt) => {
       if (!onProgress || !evt.total) return
       const pct = Math.min(100, Math.round((evt.loaded / evt.total) * 100))
       onProgress(pct)
     }
   })
-
   const url =
     data?.secure_url ||
     data?.url ||
     data?.result?.secure_url ||
     data?.data?.secure_url ||
     null
-
-  if (import.meta.env.DEV) console.log('[uploadImage] response', data, '-> url:', url)
   return { url }
 }
 
@@ -116,7 +90,6 @@ async function getUserWalletAddress(userId) {
     data?.walletAddress ||
     data?.result?.address ||
     null
-  if (import.meta.env.DEV) console.log('[getUserWalletAddress] raw response', data, 'parsed address:', addr)
   return { address: addr }
 }
 
