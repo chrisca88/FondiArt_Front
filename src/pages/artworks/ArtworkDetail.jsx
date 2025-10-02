@@ -7,7 +7,7 @@ import {
   getArtworkRating,
   rateArtwork
 } from '../../services/mockArtworks.js'
-import { buyFractions } from '../../services/mockWallet.js'
+import { buyFractions /* <- tokenizadas */, /* opcional: */ buyArtworkDirect } from '../../services/mockWallet.js'
 
 // helper para generar el slug del artista (igual que en mocks)
 const slugify = (s = '') =>
@@ -28,19 +28,17 @@ export default function ArtworkDetail(){
   const [err, setErr] = useState(null)
   const [idx, setIdx] = useState(0) // imagen seleccionada
 
-  // rating agregado
+  // rating
   const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
   const canRate = !!user && user.role === 'buyer'
   const canBuy  = !!user && user.role === 'buyer'
 
   // --- compra (modal)
   const [buyOpen, setBuyOpen] = useState(false)
-  const [qty, setQty] = useState(1)
+  const [qty, setQty] = useState(1)          // solo para tokenizadas
   const [buying, setBuying] = useState(false)
   const [buyErr, setBuyErr] = useState('')
   const [buyOk, setBuyOk] = useState(false)
-  const unit = Number(data?.fractionFrom || 0)
-  const total = useMemo(()=> Math.round(unit * Number(qty || 0) * 100) / 100, [unit, qty])
 
   useEffect(()=>{ setQty(1); setBuyErr(''); setBuyOk(false) }, [buyOpen])
 
@@ -61,19 +59,38 @@ export default function ArtworkDetail(){
     return ()=>{ alive = false }
   }, [id, user?.id])
 
-  const soldPct = useMemo(()=>{
-    if(!data) return 0
-    return Math.round(100 - (data.fractionsLeft / data.fractionsTotal) * 100)
-  }, [data])
+  const isDirect = !!data?.directSale
+  const isSold     = data?.status === 'sold'
+  const isAuctioned = data?.status === 'auctioned'
 
-  // --- formateo de fecha de subasta (YYYY-MM-DD -> DD/MM/YYYY)
+  // valores para UI de tokenizadas
+  const soldPct = useMemo(()=>{
+    if(!data || isDirect) return 0
+    const tot = Number(data.fractionsTotal || 0)
+    if (!tot) return 0
+    return Math.round(100 - (Number(data.fractionsLeft||0) / tot) * 100)
+  }, [data, isDirect])
+
+  // precio “unitario”: fracción en tokenizadas, precio final en directas
+  const unit = useMemo(()=>{
+    if (!data) return 0
+    return Number(isDirect ? (data.directPrice ?? data.price) : data.fractionFrom) || 0
+  }, [data, isDirect])
+
+  // total a pagar
+  const total = useMemo(()=>{
+    if (isDirect) return unit
+    return Math.round(unit * Number(qty || 0) * 100) / 100
+  }, [unit, qty, isDirect])
+
+  // --- formateo de fecha de subasta (solo si aplica)
   const auctionDateText = useMemo(()=>{
-    const iso = data?.auctionDate
-    if (!iso) return null
+    if (!data?.auctionDate || isDirect) return null
+    const iso = data.auctionDate
     const [yyyy, mm, dd] = String(iso).split('-')
     if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`
     try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
-  }, [data?.auctionDate])
+  }, [data?.auctionDate, isDirect])
 
   if (loading) return <section className="section-frame py-16"><Skeleton/></section>
   if (err) return (
@@ -88,7 +105,6 @@ export default function ArtworkDetail(){
   if (!data) return null
 
   const artistSlug = slugify(data.artist || '')
-  const isAuctioned = data.status === 'auctioned'
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -126,7 +142,7 @@ export default function ArtworkDetail(){
           <aside className="lg:col-span-2">
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start gap-4">
-                {/* Avatar clickeable -> perfil del artista */}
+                {/* Avatar -> perfil del artista */}
                 <Link
                   to={`/donaciones/artista/${artistSlug}`}
                   className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold ring-1 ring-transparent hover:ring-indigo-400 transition"
@@ -136,11 +152,9 @@ export default function ArtworkDetail(){
                 </Link>
                 <div>
                   <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
-                  {/* Nombre clickeable -> perfil del artista */}
                   <Link
                     to={`/donaciones/artista/${artistSlug}`}
                     className="text-slate-600 hover:text-indigo-600 hover:underline"
-                    title="Ver perfil del artista"
                   >
                     {data.artist}
                   </Link>
@@ -156,27 +170,38 @@ export default function ArtworkDetail(){
 
               <div className="divider" />
 
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <Metric label="Precio ref." value={`$${fmt(data.price)}`} />
-                <Metric label="Desde" value={`$${fmt(data.fractionFrom)}`} />
-                <Metric label="Vend." value={`${soldPct}%`} />
-              </div>
-
-              {/* fecha de subasta visible para compradores */}
-              <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                <CalendarIcon className="h-5 w-5 text-slate-500" />
-                <span><strong>Subasta:</strong> {auctionDateText || 'A definir'}</span>
-              </div>
-
-              <div className="mt-2">
-                <div className="flex justify-between text-xs text-slate-600 mb-1">
-                  <span>Disponibles</span>
-                  <span>{data.fractionsLeft}/{data.fractionsTotal}</span>
+              {/* Métricas: distintas según modo */}
+              {isDirect ? (
+                <div className="grid grid-cols-1 gap-3 text-center">
+                  <Metric label="Precio" value={`$${fmt(unit)}`} />
                 </div>
-                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-indigo-500 to-blue-500" style={{ width: `${soldPct}%` }} />
+              ) : (
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <Metric label="Precio ref." value={`$${fmt(data.price)}`} />
+                  <Metric label="Desde" value={`$${fmt(data.fractionFrom)}`} />
+                  <Metric label="Vend." value={`${soldPct}%`} />
                 </div>
-              </div>
+              )}
+
+              {/* fecha de subasta y progreso: SOLO tokenizadas */}
+              {!isDirect && (
+                <>
+                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                    <CalendarIcon className="h-5 w-5 text-slate-500" />
+                    <span><strong>Subasta:</strong> {auctionDateText || 'A definir'}</span>
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="flex justify-between text-xs text-slate-600 mb-1">
+                      <span>Disponibles</span>
+                      <span>{data.fractionsLeft}/{data.fractionsTotal}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-indigo-500 to-blue-500" style={{ width: `${soldPct}%` }} />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 {data.tags.map(t => (
@@ -214,12 +239,16 @@ export default function ArtworkDetail(){
 
               <div className="flex gap-2 pt-2">
                 <button
-                  className={`btn flex-1 disabled:opacity-60 ${isAuctioned ? 'btn-outline' : 'btn-primary'}`}
-                  disabled={!canBuy || isAuctioned}
+                  className={`btn flex-1 disabled:opacity-60 ${(!isDirect && isAuctioned) || (isDirect && isSold) ? 'btn-outline' : 'btn-primary'}`}
+                  disabled={!canBuy || (!isDirect && isAuctioned) || (isDirect && isSold)}
                   onClick={()=> setBuyOpen(true)}
-                  title={isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción'}
-                >
-                  {isAuctioned ? 'Obra subastada' : 'Comprar fracción'}
+                  title={
+                    isDirect
+                      ? (isSold ? 'Obra vendida' : 'Comprar obra')
+                      : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
+                    }
+                  >
+                    {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
                 </button>
                 <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
               </div>
@@ -238,8 +267,8 @@ export default function ArtworkDetail(){
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
-              {/* fecha de subasta también en ficha técnica */}
-              <li><strong>Subasta:</strong> {auctionDateText || 'A definir'}</li>
+              {/* Subasta sólo si NO es venta directa */}
+              {!isDirect && <li><strong>Subasta:</strong> {auctionDateText || 'A definir'}</li>}
               <li><strong>Rating:</strong> {rating.avg || data.rating || 0}</li>
             </ul>
             <div className="mt-4">
@@ -249,12 +278,13 @@ export default function ArtworkDetail(){
         </div>
       </div>
 
-      {/* ===== MODAL DE COMPRA ===== */}
+      {/* ===== MODALES DE COMPRA ===== */}
       {buyOpen && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
+            {/* Encabezado */}
             <div className="p-5 border-b border-slate-200/70 flex items-center justify-between">
-              <h3 className="text-lg font-bold">Comprar fracciones</h3>
+              <h3 className="text-lg font-bold">{isDirect ? 'Comprar obra' : 'Comprar fracciones'}</h3>
               <button className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
             </div>
 
@@ -263,43 +293,51 @@ export default function ArtworkDetail(){
                 <>
                   <div className="text-sm text-slate-700">
                     <div className="font-semibold">{data.title}</div>
-                    <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
-                    <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
+                    {isDirect ? (
+                      <div>Precio: <strong>${fmt(unit)}</strong></div>
+                    ) : (
+                      <>
+                        <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
+                        <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
+                      </>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="form-label">Cantidad</label>
-                    <div className="flex items-stretch gap-2">
-                      <button
-                        className="btn btn-outline"
-                        type="button"
-                        onClick={()=> setQty(q => Math.max(1, Number(q||1) - 1))}
-                      >−</button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={Math.max(1, Number(data.fractionsLeft||1))}
-                        className="input flex-1 text-center"
-                        value={qty}
-                        onChange={e=>{
-                          const v = Math.floor(Math.max(1, Number(e.target.value||1)))
-                          const max = Number(data.fractionsLeft||1)
-                          setQty(Math.min(v, max))
-                        }}
-                      />
-                      <button
-                        className="btn btn-outline"
-                        type="button"
-                        onClick={()=>{
-                          const max = Number(data.fractionsLeft||1)
-                          setQty(q => Math.min(max, Number(q||1) + 1))
-                        }}
-                      >+</button>
+                  {!isDirect && (
+                    <div>
+                      <label className="form-label">Cantidad</label>
+                      <div className="flex items-stretch gap-2">
+                        <button
+                          className="btn btn-outline"
+                          type="button"
+                          onClick={()=> setQty(q => Math.max(1, Number(q||1) - 1))}
+                        >−</button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={Math.max(1, Number(data.fractionsLeft||1))}
+                          className="input flex-1 text-center"
+                          value={qty}
+                          onChange={e=>{
+                            const v = Math.floor(Math.max(1, Number(e.target.value||1)))
+                            const max = Number(data.fractionsLeft||1)
+                            setQty(Math.min(v, max))
+                          }}
+                        />
+                        <button
+                          className="btn btn-outline"
+                          type="button"
+                          onClick={()=>{
+                            const max = Number(data.fractionsLeft||1)
+                            setQty(q => Math.min(max, Number(q||1) + 1))
+                          }}
+                        >+</button>
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">
+                        Total a pagar: <strong>${fmt(total)}</strong>
+                      </div>
                     </div>
-                    <div className="mt-2 text-sm text-slate-600">
-                      Total a pagar: <strong>${fmt(total)}</strong>
-                    </div>
-                  </div>
+                  )}
 
                   {buyErr && <div className="text-sm text-red-600">{buyErr}</div>}
 
@@ -307,22 +345,26 @@ export default function ArtworkDetail(){
                     <button className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
                     <button
                       className="btn btn-primary flex-1 disabled:opacity-60"
-                      disabled={buying || !qty || qty < 1}
+                      disabled={buying || (!isDirect && (!qty || qty < 1))}
                       onClick={async ()=>{
                         setBuying(true); setBuyErr('')
                         try{
-                          const res = await buyFractions(user, data.id, Number(qty||1))
-                          // actualizar ficha con la obra devuelta
-                          setData(res.artwork)
+                          if (isDirect) {
+                            // requiere buyArtworkDirect en mockWallet.js
+                            await (buyArtworkDirect?.(user, data.id))
+                          } else {
+                            const res = await buyFractions(user, data.id, Number(qty||1))
+                            setData(res.artwork) // refresca ficha
+                          }
                           setBuyOk(true)
                         }catch(e){
-                          setBuyErr(e.message || 'No se pudo completar la compra.')
+                          setBuyErr(e?.message || 'No se pudo completar la compra.')
                         }finally{
                           setBuying(false)
                         }
                       }}
                     >
-                      {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
+                      {buying ? 'Procesando…' : (isDirect ? `Comprar por $${fmt(total)}` : `Comprar por $${fmt(total)}`)}
                     </button>
                   </div>
                 </>
@@ -333,7 +375,10 @@ export default function ArtworkDetail(){
                   </div>
                   <h4 className="text-lg font-bold">¡Compra exitosa!</h4>
                   <p className="text-slate-600 text-sm">
-                    Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''} por <strong>${fmt(total)}</strong>.
+                    {isDirect
+                      ? <>Adquiriste la obra por <strong>${fmt(total)}</strong>.</>
+                      : <>Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''} por <strong>${fmt(total)}</strong>.</>
+                    }
                   </p>
                   <button className="btn btn-primary w-full" onClick={()=>setBuyOpen(false)}>Aceptar</button>
                 </div>
@@ -342,7 +387,7 @@ export default function ArtworkDetail(){
           </div>
         </div>
       )}
-      {/* ===== FIN MODAL ===== */}
+      {/* ===== FIN MODALES ===== */}
     </section>
   )
 }

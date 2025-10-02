@@ -1,3 +1,4 @@
+// src/components/artworks/ArtworkCard.jsx
 import { useState } from 'react'
 
 export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }) {
@@ -5,8 +6,9 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
   const FALLBACK =
     'https://images.unsplash.com/photo-1549880338-65ddcdfd017b?q=80&w=1600&auto=format&fit=crop'
 
-  const soldOut = item.fractionsLeft === 0
-  const soldPct = Math.round(100 - (item.fractionsLeft / item.fractionsTotal) * 100)
+  const isDirect = !!item.directSale
+  const soldOut = !isDirect && item.fractionsLeft === 0
+  const soldPct = !isDirect ? Math.round(100 - (item.fractionsLeft / item.fractionsTotal) * 100) : 0
   const initials = item.artist.split(' ').map(s => s[0]).slice(0, 2).join('')
 
   return (
@@ -31,7 +33,11 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
 
         {/* badges */}
         <div className="absolute left-3 top-3 flex gap-2">
-          {soldOut ? (
+          {isDirect ? (
+            <span className="rounded-full bg-emerald-600 text-white text-xs px-3 py-1 shadow">
+              Venta directa
+            </span>
+          ) : soldOut ? (
             <span className="rounded-full bg-slate-900/80 text-white text-xs px-3 py-1">Agotado</span>
           ) : (
             <span className="rounded-full bg-white/90 text-slate-900 text-xs px-3 py-1 shadow">
@@ -71,16 +77,28 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
 
         <div className="mt-3 flex items-end justify-between">
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Precio de referencia</div>
-            <div className="text-lg font-extrabold">${fmt(item.price)}</div>
-            <div className="text-xs text-slate-500">Fracciones desde ${fmt(item.fractionFrom)}</div>
+            {isDirect ? (
+              <>
+                <div className="text-[11px] uppercase tracking-wider text-slate-500">Precio</div>
+                <div className="text-lg font-extrabold">${fmt(item.directPrice || item.price)}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-[11px] uppercase tracking-wider text-slate-500">Precio de referencia</div>
+                <div className="text-lg font-extrabold">${fmt(item.price)}</div>
+                <div className="text-xs text-slate-500">Fracciones desde ${fmt(item.fractionFrom)}</div>
+              </>
+            )}
           </div>
-          <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Disponibles</div>
-            <div className={`text-sm font-semibold ${soldOut ? 'text-red-600' : 'text-emerald-600'}`}>
-              {item.fractionsLeft}/{item.fractionsTotal}
+
+          {!isDirect && (
+            <div className="text-right">
+              <div className="text-[11px] uppercase tracking-wider text-slate-500">Disponibles</div>
+              <div className={`text-sm font-semibold ${soldOut ? 'text-red-600' : 'text-emerald-600'}`}>
+                {item.fractionsLeft}/{item.fractionsTotal}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -107,9 +125,9 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
   )
 }
 
-function fmt(n) { return n.toLocaleString('es-AR') }
+function fmt(n) { return Number(n||0).toLocaleString('es-AR') }
 
-function HeartIcon({ className='', filled=false }){
+function HeartIcon({ className='', filled=false }){ /* igual que antes */ 
   return filled ? (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41.81 4.5 2.09C12.09 4.81 13.76 4 15.5 4 18 4 20 6 20 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>

@@ -1,5 +1,6 @@
 // src/services/mockWallet.js
-import { listArtworks, getArtworkById, sellFractions } from './mockArtworks.js'
+import { listArtworks, getArtworkById, sellFractions, setArtworkStatus } from './mockArtworks.js'
+
 
 const PREFIX = 'mock_wallet_v1_'
 const sleep = (ms = 300) => new Promise(r => setTimeout(r, ms))
@@ -10,8 +11,8 @@ function donationsKey(userId){ return `${PREFIX}${userId || 'anon'}_donations` }
 function seedIfEmpty(userId){
   const k = key(userId)
   if (!localStorage.getItem(k)){
-    // Semilla simple: 100.000 ARS y sin posiciones
-    const w = { cashARS: 100000, positions: {} } // { [artworkId]: qty }
+    // Semilla simple: 100.000 ARS, sin posiciones y sin directas
+    const w = { cashARS: 100000, positions: {}, ownedDirect: {} } // ownedDirect: { [artworkId]: true }
     localStorage.setItem(k, JSON.stringify(w))
   }
   if (!localStorage.getItem(donationsKey(userId))){
@@ -22,25 +23,32 @@ function seedIfEmpty(userId){
 export async function getWallet(userId){
   seedIfEmpty(userId)
   await sleep(120)
-  return JSON.parse(localStorage.getItem(key(userId)) || '{"cashARS":0,"positions":{}}')
+  // ensure shape para wallets viejas
+  const w = JSON.parse(localStorage.getItem(key(userId)) || '{"cashARS":0,"positions":{}}')
+  if (!w.ownedDirect) w.ownedDirect = {}
+  if (!w.positions)   w.positions   = {}
+  return w
 }
 
 export async function setWallet(userId, wallet){
+  // normaliza forma antes de guardar
+  const w = { cashARS: 0, positions: {}, ownedDirect: {}, ...wallet }
   await sleep(80)
-  localStorage.setItem(key(userId), JSON.stringify(wallet))
-  return wallet
+  localStorage.setItem(key(userId), JSON.stringify(w))
+  return w
 }
 
 /**
  * Devuelve el "portfolio" uniendo posiciones con obras aprobadas.
- * Cada item incluye: artworkId, symbol, title, price (fractionFrom),
- * qty, valueARS (qty*price) y un flag `isCash` para saldo en ARS.
+ * - tokens fraccionados (positions)
+ * - obras directas (ownedDirect) como qty=1 y price = directPrice|price
  */
 export async function getPortfolio(user){
   const uid = user?.id || 'anon'
   const w = await getWallet(uid)
   const approved = await listArtworks({}) // solo aprobadas
 
+  // ---- Tokens (fraccionadas) ----
   const tokens = approved.map(a => {
     const symbol = `TK-${String(a.id).slice(-4).toUpperCase()}`
     const price = Number(a.fractionFrom || 0)
@@ -57,13 +65,33 @@ export async function getPortfolio(user){
     }
   })
 
-  const totalTokens = tokens.reduce((acc, t) => acc + (t.valueARS || 0), 0)
+  // ---- Obras directas ----
+  const directs = approved
+    .filter(a => a.directSale && w.ownedDirect?.[a.id])
+    .map(a => {
+      const symbol = `ART-${String(a.id).slice(-4).toUpperCase()}`
+      const price = Number(a.directPrice ?? a.price ?? 0)
+      const qty = 1
+      const valueARS = price
+      return {
+        artworkId: a.id,
+        title: a.title,
+        symbol,
+        price,
+        qty,
+        valueARS,
+        image: a.image,
+      }
+    })
+
+  const allItems = [...tokens, ...directs]
+  const totalTokens = allItems.reduce((acc, t) => acc + (t.valueARS || 0), 0)
   const balanceARS = Math.round((Number(w.cashARS || 0) + totalTokens) * 100) / 100
 
   return {
     balanceARS,
     cashARS: Number(w.cashARS || 0),
-    items: tokens,
+    items: allItems,
   }
 }
 
@@ -78,12 +106,7 @@ export async function demoBuy(user, artworkId, qty){
 
 /* ===================== COMPRAS REALES (mock) ===================== */
 /**
- * Compra `qty` fracciones de una obra:
- * - Valida fondos y disponibilidad
- * - Descuenta ARS en la wallet
- * - Aumenta la posición del token
- * - Reduce `fractionsLeft` de la obra
- * Retorna { wallet, artwork, total, qty }
+ * Compra `qty` fracciones de una obra (tokenizada)
  */
 export async function buyFractions(user, artworkId, qty){
   const uid = user?.id || 'anon'
@@ -112,9 +135,48 @@ export async function buyFractions(user, artworkId, qty){
   return { wallet: w, artwork: updatedArtwork, total, qty: q }
 }
 
+/**
+ * Compra de una obra en VENTA DIRECTA (pieza completa):
+ * - Valida que sea directa y precio > 0
+ * - Valida fondos
+ * - Descuenta ARS
+ * - Marca la obra como ownedDirect (qty=1)
+ * Retorna { wallet, artwork, total }
+ */
+export async function buyArtworkDirect(user, artworkId){
+  const uid = user?.id || 'anon'
+  seedIfEmpty(uid)
+
+  const w   = await getWallet(uid)
+  const art = await getArtworkById(artworkId)
+
+  const isDirect = !!art.directSale
+  const price    = Number(art.directPrice ?? art.price ?? 0)
+
+  if (!isDirect)                       throw new Error('Esta obra no es de venta directa.')
+  if (!price)                          throw new Error('La obra no tiene precio de venta directa válido.')
+  if (w.ownedDirect?.[artworkId])      throw new Error('Ya compraste esta obra.')
+  if (Number(w.cashARS || 0) < price)  throw new Error('Fondos insuficientes en tu wallet.')
+
+  // 1) Descontar efectivo y marcar como poseída por el comprador
+  w.cashARS = Math.round((Number(w.cashARS) - price) * 100) / 100
+  w.ownedDirect = w.ownedDirect || {}
+  w.ownedDirect[artworkId] = true
+  await setWallet(uid, w)
+
+  // 2) Marcar la obra como "vendida" a nivel global -> deja de aparecer en el marketplace
+  await setArtworkStatus(artworkId, 'sold')
+
+  // 3) (opcional) traer la obra actualizada
+  const updated = await getArtworkById(artworkId)
+
+  await sleep(120)
+  return { wallet: w, artwork: updated, total: price }
+}
+
+
 /* ===================== DONACIONES ===================== */
 
-/** Registra una donación y descuenta saldo en ARS (puede incluir projectId) */
 export async function donate(user, artistSlug, amount, projectId = null){
   const uid = user?.id || 'anon'
   seedIfEmpty(uid)

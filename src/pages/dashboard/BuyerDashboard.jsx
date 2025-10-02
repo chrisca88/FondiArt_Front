@@ -1,3 +1,4 @@
+// src/pages/dashboard/BuyerDashboard.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
@@ -12,19 +13,19 @@ export default function BuyerDashboard(){
   const [tag, setTag] = useState('')
   const [loading, setLoading] = useState(true)
 
+  // NUEVO: filtro tipo de venta
+  const [sale, setSale] = useState('all') // 'all' | 'direct' | 'tokenized'
+
   const user = useSelector(s => s.auth.user)
   const favKey = useMemo(()=> user?.id ? `fav_${user.id}` : 'fav_anon', [user?.id])
   const [favs, setFavs] = useState(new Set())
 
   const navigate = useNavigate()
 
-  // cargar favoritos por usuario
-  useEffect(()=>{
-    try{
-      const arr = JSON.parse(localStorage.getItem(favKey) || '[]')
-      setFavs(new Set(arr))
-    }catch{ setFavs(new Set()) }
-  }, [favKey])
+  useEffect(()=>{ try{
+    const arr = JSON.parse(localStorage.getItem(favKey) || '[]')
+    setFavs(new Set(arr))
+  }catch{ setFavs(new Set()) } }, [favKey])
 
   const toggleFav = (artId)=>{
     setFavs(prev => {
@@ -39,17 +40,18 @@ export default function BuyerDashboard(){
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    listArtworks({ q, sort }).then(data=>{
+    listArtworks({ q, sort, sale }).then(data=>{
       if (!alive) return
       setItems(data)
       setLoading(false)
     })
     return ()=>{ alive = false }
-  }, [q, sort])
+  }, [q, sort, sale])
 
   const viewItems = useMemo(()=>{
-    if (!tag) return items
-    return items.filter(x => x.tags.includes(tag))
+    let arr = items
+    if (tag) arr = arr.filter(x => x.tags.includes(tag))
+    return arr
   }, [items, tag])
 
   const empty = !loading && viewItems.length === 0
@@ -80,7 +82,7 @@ export default function BuyerDashboard(){
                 Obras <span className="text-indigo-600">disponibles</span>
               </h1>
               <p className="lead mt-2 max-w-2xl">
-                Descubrí piezas únicas y comprá fracciones desde valores accesibles.
+                Descubrí piezas únicas y comprá fracciones o directamente la obra.
               </p>
             </div>
 
@@ -110,6 +112,12 @@ export default function BuyerDashboard(){
                 <option value="newest">Más nuevas</option>
                 <option value="price-asc">Precio: menor a mayor</option>
                 <option value="price-desc">Precio: mayor a menor</option>
+              </select>
+              {/* NUEVO: filtro tipo de venta */}
+              <select className="input w-48" value={sale} onChange={e=>setSale(e.target.value)}>
+                <option value="all">Todas</option>
+                <option value="direct">Venta directa</option>
+                <option value="tokenized">Tokenizadas</option>
               </select>
             </div>
 
@@ -152,27 +160,23 @@ export default function BuyerDashboard(){
 }
 
 /* --- auxiliares --- */
-function Metric({ label, value }){
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-center">
-      <div className="text-2xl font-extrabold">{value}</div>
-      <div className="text-[11px] tracking-wider uppercase text-slate-500">{label}</div>
-    </div>
-  )
-}
-function Chip({ label, active, onClick }){
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap transition
-                  ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                           : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white'}`}
-    >
-      {label}
-    </button>
-  )
-}
-function SkeletonCard(){
+function Metric({ label, value }){ /* igual que antes */ return (
+  <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-center">
+    <div className="text-2xl font-extrabold">{value}</div>
+    <div className="text-[11px] tracking-wider uppercase text-slate-500">{label}</div>
+  </div>
+)}
+function Chip({ label, active, onClick }){ /* igual que antes */ return (
+  <button
+    onClick={onClick}
+    className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap transition
+                ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                         : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white'}`}
+  >
+    {label}
+  </button>
+)}
+function SkeletonCard(){ /* igual que antes */ 
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
       <div className="aspect-[4/3] w-full animate-pulse bg-slate-200/70" />
@@ -186,7 +190,7 @@ function SkeletonCard(){
     </div>
   )
 }
-function EmptyState(){
+function EmptyState(){ /* igual que antes */ 
   return (
     <div className="card-surface p-12 text-center">
       <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-indigo-600/10 text-indigo-600">
