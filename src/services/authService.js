@@ -87,6 +87,15 @@ async function me() {
   return data
 }
 
+/** PATCH /users/me/ -> User actualizado */
+async function updateMe(payload) {
+  // Si tu backend usa PUT, cambiá a client.put('/users/me/', payload)
+  const { data } = await client.patch('/users/me/', payload)
+  if (import.meta.env.DEV) console.log('[authService.updateMe] response', data)
+  // Algunos backends devuelven { user }, otros el objeto de usuario directo
+  return data?.user ?? data
+}
+
 /** GET /users/<user_id>/wallet/ -> { address } */
 async function getUserWalletAddress(userId) {
   if (!userId) throw new Error('Falta userId')
@@ -115,6 +124,7 @@ export default {
   register,
   login,
   me,
+  updateMe,              // ✅ NUEVO
   setAuthToken,
   getUserWalletAddress,
 }

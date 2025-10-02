@@ -1,9 +1,12 @@
+// src/pages/account/Profile.jsx
 import { useDispatch, useSelector } from 'react-redux'
 import { useState } from 'react'
-import { updateProfile } from '../../features/auth/authSlice.js'
+import { saveProfile } from '../../features/auth/authSlice.js' // ✅ usar thunk real
 
 export default function Profile(){
   const user = useSelector(s => s.auth.user)
+  const status = useSelector(s => s.auth.status)
+  const error  = useSelector(s => s.auth.error)
   const dispatch = useDispatch()
 
   const [form, setForm] = useState({
@@ -17,11 +20,14 @@ export default function Profile(){
   })
   const [saved, setSaved]  = useState(false)
   const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [submitErr, setSubmitErr] = useState('')
 
   const onChange = (e)=>{
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
     setSaved(false)
+    setSubmitErr('')
   }
 
   const validate = ()=>{
@@ -41,19 +47,28 @@ export default function Profile(){
     return Object.keys(errs).length === 0
   }
 
-  const onSubmit = (e)=>{
+  const onSubmit = async (e)=>{
     e.preventDefault()
+    setSubmitErr('')
     if (!validate()) return
-    dispatch(updateProfile({
-      name:   form.name,
-      email:  form.email,
-      avatar: form.avatar,
-      bio:    form.bio,
-      phone:  form.phone,
-      dni:    form.dni?.trim(),
-      cbu:    form.cbu?.trim(),
-    }))
-    setSaved(true)
+    setSaving(true)
+    try{
+      // Enviamos TODO el formulario. El backend actualizará los campos permitidos.
+      await dispatch(saveProfile({
+        name  : form.name,
+        email : form.email,
+        avatar: form.avatar,
+        bio   : form.bio,
+        phone : form.phone,
+        dni   : form.dni?.trim() || null,
+        cbu   : form.cbu?.trim() || null,
+      })).unwrap()
+      setSaved(true)
+    }catch(err){
+      setSubmitErr(err || 'No se pudo guardar los cambios.')
+    }finally{
+      setSaving(false)
+    }
   }
 
   const isArtist = String(user?.role).toLowerCase() === 'artist'
@@ -66,11 +81,22 @@ export default function Profile(){
           <p className="eyebrow">Cuenta</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mi perfil</h1>
           <p className="lead mt-2 max-w-2xl">
-            Actualizá tu información básica. (Datos guardados en localStorage – modo demo)
+            Actualizá tu información básica.
           </p>
         </div>
 
         <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
+          {submitErr && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
+              {submitErr}
+            </div>
+          )}
+          {error && status === 'failed' && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
+              {String(error)}
+            </div>
+          )}
+
           <div className="flex items-center gap-4">
             {form.avatar ? (
               <img src={form.avatar} alt="preview" className="h-16 w-16 rounded-full object-cover" />
@@ -122,7 +148,7 @@ export default function Profile(){
             </div>
           )}
 
-          {/* Teléfono (visible para todos) */}
+          {/* Teléfono */}
           <div>
             <label className="form-label" htmlFor="phone">Teléfono</label>
             <input
@@ -171,7 +197,9 @@ export default function Profile(){
           </div>
 
           <div className="pt-2">
-            <button className="btn btn-primary btn-lg">Guardar cambios</button>
+            <button className="btn btn-primary btn-lg" disabled={saving || status === 'loading'}>
+              {saving || status === 'loading' ? 'Guardando…' : 'Guardar cambios'}
+            </button>
             {saved && <span className="ml-3 text-sm text-emerald-600">¡Guardado!</span>}
           </div>
         </form>

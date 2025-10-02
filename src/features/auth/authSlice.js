@@ -3,10 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import * as mock from '../../services/mockAuth.js'
 import authService, { setAuthToken } from '../../services/authService.js'
 
-// Detección unificada de mock vs real:
-// - Si VITE_MOCK_AUTH = '1'/'true' => mock
-// - Si VITE_MOCK_AUTH = '0'/'false' => real
-// - Si no está definido, usamos backend real cuando existe VITE_API_URL; si no, mock.
+// Detección unificada mock vs real
 const envMock = String(import.meta.env.VITE_MOCK_AUTH ?? '').toLowerCase()
 const hasApiUrl = !!import.meta.env.VITE_API_URL
 export const IS_MOCK =
@@ -28,7 +25,7 @@ function normalizeUser(u) {
   return { ...u, id }
 }
 
-// ✅ inyecta el token en axios al boot si existe
+// ✅ inyecta token en axios al boot (tras refresh)
 const bootToken = localStorage.getItem('token')
 if (bootToken) setAuthToken(bootToken)
 
@@ -99,6 +96,25 @@ export const loadUser = createAsyncThunk('auth/loadUser', async (_,_helpers)=>{
   return { token, user: normalized }
 })
 
+/** ✅ Guardar perfil en backend: PATCH /users/me/ */
+export const saveProfile = createAsyncThunk('auth/saveProfile', async (payload, { getState, rejectWithValue })=>{
+  try{
+    if (IS_MOCK) {
+      // Si hay mock.updateMe lo usamos; si no, actualizamos localmente
+      const current = getState().auth.user || {}
+      const updated = normalizeUser({ ...current, ...payload })
+      await mock.updateMe?.(payload)
+      return { user: updated }
+    }
+    const data = await authService.updateMe(payload)
+    const user = normalizeUser(data)
+    return { user }
+  }catch(err){
+    if (import.meta.env.DEV) console.error('[saveProfile] error', err?.response?.data || err.message)
+    return rejectWithValue(err?.response?.data?.message || err.message || 'Error al guardar el perfil')
+  }
+})
+
 /* ============ SLICE ============ */
 const authSlice = createSlice({
   name: 'auth',
@@ -115,6 +131,7 @@ const authSlice = createSlice({
       setAuthToken(null)
       if (import.meta.env.DEV) console.log('[logout] done.')
     },
+    // (Solo UI / demo) Actualizar en memoria y localStorage
     updateProfile(state, action){
       if (!state.user) return
       state.user = normalizeUser({ ...state.user, ...action.payload })
@@ -157,6 +174,18 @@ const authSlice = createSlice({
         if (import.meta.env.DEV) console.log('[loadUser/fulfilled] user:', state.user, 'hasToken:', !!state.token)
       })
       .addCase(loadUser.rejected, rejected)
+
+      // ✅ saveProfile -> actualiza store y localStorage
+      .addCase(saveProfile.pending,  pending)
+      .addCase(saveProfile.fulfilled, (state, action)=>{
+        state.status = 'succeeded'
+        state.error  = null
+        if (action.payload?.user) {
+          state.user = normalizeUser(action.payload.user)
+          localStorage.setItem('user', JSON.stringify(state.user))
+        }
+      })
+      .addCase(saveProfile.rejected, rejected)
   }
 })
 
