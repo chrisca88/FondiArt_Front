@@ -4,6 +4,8 @@ import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import { getPortfolio } from '../../services/mockWallet.js'
 import authService from '../../services/authService.js'
+import API_URL from '../../config.js'
+import { IS_MOCK } from '../../features/auth/authSlice.js'
 
 export default function Wallet(){
   const user = useSelector(s => s.auth.user)
@@ -19,8 +21,27 @@ export default function Wallet(){
 
   // UI state
   const [q, setQ] = useState('')
-  const [showAmounts, setShowAmounts] = useState(true)         // mostrar/ocultar montos y disponibles
-  const [hideSmall, setHideSmall]   = useState(false)          // ocultar < $1
+  const [showAmounts, setShowAmounts] = useState(true)
+  const [hideSmall, setHideSmall]   = useState(false)
+
+  // Log de contexto al montar
+  useEffect(()=>{
+    if (!import.meta.env.DEV) return
+    const token = localStorage.getItem('token')
+    console.log('[WALLET] ENV', {
+      API_URL,
+      IS_MOCK,
+      hasToken: !!token,
+      tokenSample: token ? (token.slice(0, 10) + '…') : '(none)',
+      user,
+      axiosBaseURL: authService.client.defaults.baseURL,
+      hasAuthHeader: !!authService.client.defaults.headers?.Authorization,
+      authHeaderSample: authService.client.defaults.headers?.Authorization
+        ? authService.client.defaults.headers.Authorization.slice(0, 16) + '…'
+        : '(none)',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(()=>{
     let alive = true
@@ -39,20 +60,23 @@ export default function Wallet(){
     setAddrError('')
     setWalletAddr(null)
 
-    const uid = getBackendUserId(user)
+    const uid = user?.id
+
+    if (IS_MOCK) {
+      setAddrLoading(false)
+      setAddrError('Sesión de demostración activa (sin backend).')
+      if (import.meta.env.DEV) console.log('[WALLET] Modo MOCK: no se llama a /users/<id>/wallet/')
+      return
+    }
 
     if (!uid) {
       setAddrLoading(false)
       setAddrError('No hay usuario autenticado.')
+      if (import.meta.env.DEV) console.log('[WALLET] Sin user.id, no se puede pedir wallet.')
       return
     }
 
-    // Si todavía estamos con ID de MOCK (ej. "u123..."), abortamos y avisamos.
-    if (typeof uid === 'string' && /^u\d+/.test(uid)) {
-      setAddrLoading(false)
-      setAddrError('Sesión de demostración activa. Iniciá sesión real para ver tu dirección de wallet.')
-      return
-    }
+    if (import.meta.env.DEV) console.log('[WALLET] Fetch wallet for userId=', uid)
 
     authService.getUserWalletAddress(uid)
       .then(({ address }) => {
@@ -69,7 +93,7 @@ export default function Wallet(){
     return ()=>{ alive = false }
   }, [user?.id])
 
-  // búsqueda + filtro < $1 (solo tokens; ARS se muestra siempre)
+  // búsqueda + filtro < $1
   const filtered = useMemo(()=>{
     const term = q.trim().toLowerCase()
     let arr = data.items
@@ -159,7 +183,7 @@ export default function Wallet(){
           </div>
           <div className="h-px bg-slate-200/70" />
 
-          {/* Fila de ARS (siempre visible) */}
+          {/* Fila de ARS */}
           <RowARS cash={data.cashARS} masked={!showAmounts} />
 
           {/* Tokens */}
@@ -181,12 +205,6 @@ export default function Wallet(){
       </div>
     </section>
   )
-}
-
-/* -------------------- Helpers -------------------- */
-function getBackendUserId(u){
-  // Tomamos el id del backend, cualquiera sea su nombre.
-  return u?.id ?? u?.user_id ?? u?.userId ?? u?.pk ?? null
 }
 
 /* -------------------- Filas -------------------- */
