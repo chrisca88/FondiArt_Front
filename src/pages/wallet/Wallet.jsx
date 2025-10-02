@@ -14,6 +14,11 @@ export default function Wallet(){
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ balanceARS: 0, cashARS: 0, items: [] })
 
+  // Saldo en ARS (desde backend)
+  const [cashARS, setCashARS] = useState(0)
+  const [cashLoading, setCashLoading] = useState(true)
+  const [cashError, setCashError] = useState('')
+
   // Dirección de wallet (desde backend)
   const [walletAddr, setWalletAddr] = useState(null)
   const [addrLoading, setAddrLoading] = useState(true)
@@ -52,6 +57,44 @@ export default function Wallet(){
     })
     return ()=>{ alive = false }
   }, [user])
+
+  // Traer saldo ARS del backend al montar / al cambiar user.id
+  useEffect(()=>{
+    let alive = true
+    setCashLoading(true)
+    setCashError('')
+    setCashARS(0)
+
+    if (IS_MOCK) {
+      setCashLoading(false)
+      setCashError('Sesión de demostración activa (sin backend).')
+      if (import.meta.env.DEV) console.log('[WALLET] Modo MOCK: no se llama a finance/cuenta/')
+      return
+    }
+
+    if (!user?.id) {
+      setCashLoading(false)
+      setCashError('No hay usuario autenticado.')
+      if (import.meta.env.DEV) console.log('[WALLET] Sin user.id, no se puede pedir saldo.')
+      return
+    }
+
+    authService.client.get(`finance/cuenta/`)
+      .then(res=>{
+        if(!alive) return
+        // ⚠️ ajustá el campo según tu API (ej: res.data.saldo)
+        console.log('Respuesta de la API para el balance:', res.data)
+        setCashARS(res.data?.balance || 0)
+        setCashLoading(false)
+      })
+      .catch(err=>{
+        if(!alive) return
+        setCashError(err?.response?.data?.message || err.message || 'Error al obtener saldo')
+        setCashLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [user?.id])
 
   // Traer dirección de wallet del backend al montar / al cambiar user.id
   useEffect(()=>{
@@ -140,7 +183,9 @@ export default function Wallet(){
             </div>
 
             <BalanceBox
-              value={data.cashARS}
+              value={cashARS}
+              loading={cashLoading}
+              error={cashError}
               masked={!showAmounts}
               onToggle={()=> setShowAmounts(v => !v)}
             />
@@ -184,7 +229,7 @@ export default function Wallet(){
           <div className="h-px bg-slate-200/70" />
 
           {/* Fila de ARS */}
-          <RowARS cash={data.cashARS} masked={!showAmounts} />
+          <RowARS cash={cashARS} loading={cashLoading} error={cashError} masked={!showAmounts} />
 
           {/* Tokens */}
           {loading ? (
@@ -208,7 +253,14 @@ export default function Wallet(){
 }
 
 /* -------------------- Filas -------------------- */
-function RowARS({ cash = 0, masked = false }){
+function RowARS({ cash = 0, masked = false, loading, error }){
+  const renderValue = (val) => {
+    if (loading) return <span className="text-slate-400">Cargando…</span>
+    if (error) return <span className="text-red-500">Error</span>
+    if (masked) return '******'
+    return val
+  }
+
   const qty = fmt(cash)
   const val = `$${fmt(cash)}`
   return (
@@ -221,8 +273,8 @@ function RowARS({ cash = 0, masked = false }){
         </div>
       </div>
       <div className="col-span-2 text-right text-slate-600">—</div>
-      <div className="col-span-2 text-right font-semibold">{masked ? '******' : qty}</div>
-      <div className="col-span-2 text-right font-extrabold">{masked ? '******' : val}</div>
+      <div className="col-span-2 text-right font-semibold">{renderValue(qty)}</div>
+      <div className="col-span-2 text-right font-extrabold">{renderValue(val)}</div>
       <div className="col-span-2 text-right">
         <span className="inline-block text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-1">—</span>
       </div>
@@ -256,7 +308,14 @@ function RowToken({ item, masked = false, onBuy }){
 }
 
 /* -------------------- UI helpers -------------------- */
-function BalanceBox({ value = 0, masked = false, onToggle }){
+function BalanceBox({ value = 0, masked = false, onToggle, loading, error }){
+  const renderContent = () => {
+    if (loading) return <div className="text-sm text-slate-500">Cargando saldo…</div>
+    if (error) return <div className="text-sm text-red-600" title={error}>Error de saldo</div>
+    if (masked) return '******'
+    return `$${fmt(value)}`
+  }
+
   return (
     <div className="relative rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 px-5 py-3 text-center shadow-sm min-w-[220px]">
       <button
@@ -266,7 +325,7 @@ function BalanceBox({ value = 0, masked = false, onToggle }){
       >
         {masked ? <EyeOffIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}
       </button>
-      <div className="text-2xl font-extrabold">{masked ? '******' : `$${fmt(value)}`}</div>
+      <div className="text-2xl font-extrabold">{renderContent()}</div>
       <div className="text-[11px] tracking-wider uppercase text-slate-500">Saldo en pesos</div>
     </div>
   )
