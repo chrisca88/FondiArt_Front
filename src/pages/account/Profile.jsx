@@ -10,7 +10,6 @@ export default function Profile(){
   const error  = useSelector(s => s.auth.error)
   const dispatch = useDispatch()
 
-  // Usamos avatarUrl (nombre real del backend). Si viene "avatar" desde atrás, lo tomamos como fallback.
   const [form, setForm] = useState({
     name:      user?.name      || '',
     email:     user?.email     || '',
@@ -21,7 +20,6 @@ export default function Profile(){
     cbu:       user?.cbu       || '',
   })
 
-  // Resync cuando cambia el user del store
   useEffect(()=>{
     setForm(f => ({
       ...f,
@@ -40,11 +38,11 @@ export default function Profile(){
   const [saving, setSaving] = useState(false)
   const [submitErr, setSubmitErr] = useState('')
 
-  // Subida de imagen local -> Cloudinary (vía backend)
+  // Subida de imagen
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadErr, setUploadErr] = useState('')
-  const [localPreview, setLocalPreview] = useState('') // preview inmediato del archivo local
+  const [localPreview, setLocalPreview] = useState('')
 
   const onChange = (e)=>{
     const { name, value } = e.target
@@ -55,14 +53,8 @@ export default function Profile(){
 
   const validate = ()=>{
     const errs = {}
-
-    if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) {
-      errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
-    }
-    if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) {
-      errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
-    }
-
+    if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
+    if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -77,7 +69,7 @@ export default function Profile(){
       await dispatch(saveProfile({
         name     : form.name,
         email    : form.email,
-        avatarUrl: form.avatarUrl?.trim() || null, // ✅ guardamos secure_url en avatarUrl
+        avatarUrl: form.avatarUrl?.trim() || null, // se guarda secure_url
         bio      : form.bio,
         phone    : form.phone,
         dni      : form.dni?.trim() || null,
@@ -91,43 +83,45 @@ export default function Profile(){
     }
   }
 
-  // Maneja selección de archivo y subida a /api/v1/upload
   async function onFileChange(e){
     const file = e.target.files?.[0]
     if (!file) return
     setUploadErr('')
     setSaved(false)
 
-    // Preview temporal del archivo local
-    try {
-      const url = URL.createObjectURL(file)
-      setLocalPreview(url)
-    } catch {}
+    try { setLocalPreview(URL.createObjectURL(file)) } catch {}
 
     setUploading(true)
     setUploadProgress(0)
     try{
       const { url } = await authService.uploadImage(
         file,
-        // Opcionales que tu backend podría aceptar y reenviar a Cloudinary:
         { folder: 'avatars' },
         (pct)=> setUploadProgress(pct)
       )
       if (!url) throw new Error('El servidor no devolvió secure_url')
-
-      // Asignamos la secure_url al formulario
       setForm(prev => ({ ...prev, avatarUrl: url }))
+      if (import.meta.env.DEV) console.log('[Profile] upload OK -> secure_url:', url)
     }catch(err){
-      setUploadErr(err?.response?.data?.message || err?.message || 'No se pudo subir la imagen.')
+      const msg = err?.response?.data?.message || err?.message || 'No se pudo subir la imagen.'
+      setUploadErr(msg)
+      if (import.meta.env.DEV) console.error('[Profile] upload ERROR:', msg)
     }finally{
       setUploading(false)
-      // No revocamos el preview inmediatamente para que el usuario lo vea; lo limpiamos si cambia de archivo.
     }
   }
 
   const isArtist = String(user?.role).toLowerCase() === 'artist'
   const fmtInputError = (key)=> errors[key] ? '!border-red-300 focus:!ring-red-200' : ''
   const previewSrc = localPreview || form.avatarUrl
+
+  // Logs útiles para diagnosticar “se desloguea”
+  useEffect(()=>{
+    if (import.meta.env.DEV) {
+      console.log('[Profile] user store:', user)
+      console.log('[Profile] token in LS exists?:', !!localStorage.getItem('token'))
+    }
+  }, [user])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -140,20 +134,15 @@ export default function Profile(){
 
         <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
 
-          {/* Alertas globales */}
+          {/* Alertas */}
           {saved && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700 text-sm">
               ¡Datos guardados correctamente!
             </div>
           )}
-          {submitErr && (
+          {(submitErr || (error && status === 'failed')) && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
-              {submitErr}
-            </div>
-          )}
-          {error && status === 'failed' && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
-              {String(error)}
+              {submitErr || String(error)}
             </div>
           )}
 
@@ -165,11 +154,10 @@ export default function Profile(){
               <div className="h-16 w-16 rounded-full bg-slate-200" />
             )}
             <div className="text-sm text-slate-600">
-              Podés pegar una URL o subir una imagen desde tu computadora.
+              Subí una imagen desde tu computadora. Se guardará cuando confirmes los cambios.
             </div>
           </div>
 
-          {/* Subir desde la computadora -> /api/v1/upload */}
           <div>
             <label className="form-label" htmlFor="avatarFile">Subir imagen (local)</label>
             <input
@@ -191,23 +179,13 @@ export default function Profile(){
             {uploadErr && <div className="text-xs text-red-600 mt-2">{uploadErr}</div>}
             {!uploading && form.avatarUrl && (
               <div className="text-xs text-emerald-700 mt-2">
-                Imagen subida. Recordá presionar <strong>Guardar cambios</strong> para persistirla en tu perfil.
+                Imagen subida. Recordá presionar <strong>Guardar cambios</strong> para persistirla.
               </div>
             )}
           </div>
 
-          {/* Pegando una URL (opcional) */}
-          <div>
-            <label className="form-label" htmlFor="avatarUrl">URL de avatar</label>
-            <input
-              id="avatarUrl"
-              name="avatarUrl"
-              className="input"
-              placeholder="https://… (también se completa solo al subir)"
-              value={form.avatarUrl}
-              onChange={onChange}
-            />
-          </div>
+          {/* (URL de avatar oculta) */}
+          <input type="hidden" name="avatarUrl" value={form.avatarUrl} readOnly />
 
           <div>
             <label className="form-label" htmlFor="name">Nombre</label>
@@ -230,9 +208,7 @@ export default function Profile(){
                 value={form.bio}
                 onChange={onChange}
               />
-              <p className="text-xs text-slate-500 mt-1">
-                Esto puede mostrarse en tu perfil público junto a tus obras.
-              </p>
+              <p className="text-xs text-slate-500 mt-1">Esto puede mostrarse en tu perfil público.</p>
             </div>
           )}
 
@@ -295,5 +271,3 @@ export default function Profile(){
     </section>
   )
 }
-
-function fmtInputError(key){ return '' }
