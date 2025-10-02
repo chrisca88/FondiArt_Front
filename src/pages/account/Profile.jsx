@@ -1,24 +1,40 @@
 // src/pages/account/Profile.jsx
 import { useDispatch, useSelector } from 'react-redux'
-import { useState } from 'react'
-import { saveProfile } from '../../features/auth/authSlice.js' // ✅ usar thunk real
+import { useEffect, useState } from 'react'
+import { saveProfile } from '../../features/auth/authSlice.js' // ✅ thunk que pega a /users/me/
 
 export default function Profile(){
-  const user = useSelector(s => s.auth.user)
+  const user   = useSelector(s => s.auth.user)
   const status = useSelector(s => s.auth.status)
   const error  = useSelector(s => s.auth.error)
   const dispatch = useDispatch()
 
+  // ⚠️ Usamos avatarUrl (nombre real del backend). Si viene "avatar" desde atrás, lo tomamos como fallback.
   const [form, setForm] = useState({
-    name:   user?.name   || '',
-    email:  user?.email  || '',
-    avatar: user?.avatar || '',
-    bio:    user?.bio    || '',
-    phone:  user?.phone  || '',
-    dni:    user?.dni    || '',
-    cbu:    user?.cbu    || '',
+    name:      user?.name      || '',
+    email:     user?.email     || '',
+    avatarUrl: user?.avatarUrl || user?.avatar || '',
+    bio:       user?.bio       || '',
+    phone:     user?.phone     || '',
+    dni:       user?.dni       || '',
+    cbu:       user?.cbu       || '',
   })
-  const [saved, setSaved]  = useState(false)
+
+  // Si el user del store cambia (p.ej. tras guardar), refrescamos el form para ver cambios normalizados
+  useEffect(()=>{
+    setForm(f => ({
+      ...f,
+      name:      user?.name      ?? f.name,
+      email:     user?.email     ?? f.email,
+      avatarUrl: (user?.avatarUrl || user?.avatar) ?? f.avatarUrl,
+      bio:       user?.bio       ?? f.bio,
+      phone:     user?.phone     ?? f.phone,
+      dni:       user?.dni       ?? f.dni,
+      cbu:       user?.cbu       ?? f.cbu,
+    }))
+  }, [user?.name, user?.email, user?.avatarUrl, user?.avatar, user?.bio, user?.phone, user?.dni, user?.cbu])
+
+  const [saved, setSaved] = useState(false)
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [submitErr, setSubmitErr] = useState('')
@@ -33,12 +49,10 @@ export default function Profile(){
   const validate = ()=>{
     const errs = {}
 
-    // DNI: 7 a 9 dígitos (flexible; ajustá si querés 8 exactos)
     if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) {
       errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
     }
 
-    // CBU: 22 dígitos sin guiones ni espacios
     if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) {
       errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
     }
@@ -50,22 +64,23 @@ export default function Profile(){
   const onSubmit = async (e)=>{
     e.preventDefault()
     setSubmitErr('')
+    setSaved(false)
     if (!validate()) return
     setSaving(true)
     try{
-      // Enviamos TODO el formulario. El backend actualizará los campos permitidos.
+      // ✅ Enviamos TODOS los datos, incluyendo avatarUrl (nombre correcto del backend)
       await dispatch(saveProfile({
-        name  : form.name,
-        email : form.email,
-        avatar: form.avatar,
-        bio   : form.bio,
-        phone : form.phone,
-        dni   : form.dni?.trim() || null,
-        cbu   : form.cbu?.trim() || null,
+        name     : form.name,
+        email    : form.email,
+        avatarUrl: form.avatarUrl?.trim() || null,
+        bio      : form.bio,
+        phone    : form.phone,
+        dni      : form.dni?.trim() || null,
+        cbu      : form.cbu?.trim() || null,
       })).unwrap()
-      setSaved(true)
+      setSaved(true) // ✅ Mensaje de éxito
     }catch(err){
-      setSubmitErr(err || 'No se pudo guardar los cambios.')
+      setSubmitErr(err || 'No se pudo guardar los cambios.') // ✅ Mensaje de error
     }finally{
       setSaving(false)
     }
@@ -86,6 +101,12 @@ export default function Profile(){
         </div>
 
         <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
+          {/* Alertas globales */}
+          {saved && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700 text-sm">
+              ¡Datos guardados correctamente!
+            </div>
+          )}
           {submitErr && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
               {submitErr}
@@ -98,8 +119,8 @@ export default function Profile(){
           )}
 
           <div className="flex items-center gap-4">
-            {form.avatar ? (
-              <img src={form.avatar} alt="preview" className="h-16 w-16 rounded-full object-cover" />
+            {form.avatarUrl ? (
+              <img src={form.avatarUrl} alt="preview" className="h-16 w-16 rounded-full object-cover" />
             ) : (
               <div className="h-16 w-16 rounded-full bg-slate-200" />
             )}
@@ -119,13 +140,13 @@ export default function Profile(){
           </div>
 
           <div>
-            <label className="form-label" htmlFor="avatar">URL de avatar</label>
+            <label className="form-label" htmlFor="avatarUrl">URL de avatar</label>
             <input
-              id="avatar"
-              name="avatar"
+              id="avatarUrl"
+              name="avatarUrl"
               className="input"
               placeholder="https://…"
-              value={form.avatar}
+              value={form.avatarUrl}
               onChange={onChange}
             />
           </div>
@@ -148,7 +169,6 @@ export default function Profile(){
             </div>
           )}
 
-          {/* Teléfono */}
           <div>
             <label className="form-label" htmlFor="phone">Teléfono</label>
             <input
@@ -162,7 +182,6 @@ export default function Profile(){
             />
           </div>
 
-          {/* DNI */}
           <div>
             <label className="form-label" htmlFor="dni">DNI</label>
             <input
@@ -179,7 +198,6 @@ export default function Profile(){
             {errors.dni && <p className="text-xs text-red-600 mt-1">{errors.dni}</p>}
           </div>
 
-          {/* CBU */}
           <div>
             <label className="form-label" htmlFor="cbu">CBU</label>
             <input
@@ -200,7 +218,6 @@ export default function Profile(){
             <button className="btn btn-primary btn-lg" disabled={saving || status === 'loading'}>
               {saving || status === 'loading' ? 'Guardando…' : 'Guardar cambios'}
             </button>
-            {saved && <span className="ml-3 text-sm text-emerald-600">¡Guardado!</span>}
           </div>
         </form>
       </div>
