@@ -118,7 +118,7 @@ export default function AdminArtworkReview(){
       await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload);
 
       // 3. Tokenize the artwork
-      await api.post(`/api/v1/artworks/${data.id}/tokenize/`);
+      await api.post(`/api/v1/tokenize/`);
 
       // 4. Re-fetch artwork data to get the contract address and latest status
       try {

@@ -42,8 +42,11 @@ export default function ArtworkDetail(){
   const [err, setErr] = useState(null)
   const [idx, setIdx] = useState(0) // imagen seleccionada
 
-  // rating (solo lectura desde API)
+  // rating
   const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
+  const [rateErr, setRateErr] = useState('')
+  const [rateSaving, setRateSaving] = useState(false)
+  const canRate = !!user
   const canBuy  = !!user && user.role === 'buyer'
 
   // --- compra (modal)
@@ -110,7 +113,7 @@ export default function ArtworkDetail(){
     return ()=>{ alive = false }
   }, [id])
 
-  const isDirect   = !!data?.directSale
+  const isDirect    = !!data?.directSale
   const isAuctioned = data?.status === 'auctioned'
   const isSold      = isDirect && (data?.estado_venta === 'vendida')
 
@@ -143,6 +146,26 @@ export default function ArtworkDetail(){
     if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`
     try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
   }, [data?.auctionDate, isDirect])
+
+  // --- acciones
+  const handleRate = async (value) => {
+    if (!canRate || !data?.id) return
+    setRateErr('')
+    setRateSaving(true)
+    try{
+      const res = await authService.client.post(`/artworks/${data.id}/rate/`, { value })
+      const r = res?.data || {}
+      setRating({
+        avg: Number(r.avg || 0),
+        count: Number(r.count || 0),
+        my: Number(r.my || value || 0),
+      })
+    }catch(e){
+      setRateErr(e?.response?.data?.error || e?.message || 'No se pudo registrar tu valoración.')
+    }finally{
+      setRateSaving(false)
+    }
+  }
 
   if (loading) return <section className="section-frame py-16"><Skeleton/></section>
   if (err) return (
@@ -265,10 +288,29 @@ export default function ArtworkDetail(){
                 ))}
               </div>
 
-              {/* Bloque de valoración: solo lectura (de momento) */}
-              <div className="mt-2 border-t pt-3 text-xs text-slate-500">
-                Valoraciones disponibles: {rating?.count || 0}
+              {/* ----- Bloque de valoración ----- */}
+              <div className="mt-2 border-t pt-3">
+                {canRate ? (
+                  <div>
+                    <div className="text-xs text-slate-600 mb-1">
+                      {rateSaving ? 'Guardando tu valoración…' : 'Tu valoración'}
+                    </div>
+                    <StarSelector
+                      value={Number(rating?.my || 0)}
+                      onChange={(v)=> handleRate(v)}
+                    />
+                    {rateErr
+                      ? <div className="text-xs text-red-600 mt-1">{rateErr}</div>
+                      : !!rating?.my && <div className="text-xs text-slate-500 mt-1">¡Gracias por valorar esta obra!</div>
+                    }
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">
+                    Iniciá sesión para valorar esta obra.
+                  </div>
+                )}
               </div>
+              {/* -------------------------------- */}
 
               <div className="flex gap-2 pt-2">
                 <button
@@ -462,3 +504,38 @@ function CalendarIcon(props){ return (
   </svg>
 )}
 function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
+
+/* --- selector de estrellas --- */
+function StarSelector({ value = 0, onChange }){
+  const [hover, setHover] = useState(0)
+  const active = hover || value
+  return (
+    <div className="inline-flex items-center gap-1">
+      {[1,2,3,4,5].map(v=>(
+        <button
+          key={v}
+          type="button"
+          className="p-0.5"
+          onMouseEnter={()=>setHover(v)}
+          onMouseLeave={()=>setHover(0)}
+          onClick={()=>onChange?.(v)}
+          aria-label={`Valorar con ${v} estrellas`}
+          title={`${v} estrella${v>1?'s':''}`}
+        >
+          <StarIcon className={`h-6 w-6 ${v <= active ? 'text-yellow-500' : 'text-slate-300'}`} filled={v <= active}/>
+        </button>
+      ))}
+    </div>
+  )
+}
+function StarIcon({ className = '', filled = true }){
+  return filled ? (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
+    </svg>
+  )
+}
