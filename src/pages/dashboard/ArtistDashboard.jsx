@@ -22,10 +22,10 @@ export default function ArtistDashboard() {
   // --------- estado del formulario ---------
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [directSale, setDirectSale] = useState(true) // Venta directa por defecto
-  const [price, setPrice] = useState('') // Renombrado para claridad
+  const [directSale, setDirectSale] = useState(true) // Venta directa por defecto (dejado como lo tenías)
+  const [price, setPrice] = useState('')
   const [fractionsTotal, setFractionsTotal] = useState('')
-  const [fractionFrom, setFractionFrom] = useState('')
+  const [fractionFrom, setFractionFrom] = useState('') // (no lo usa el back, lo dejamos por si lo necesitás luego)
 
   // galería e imágenes
   const [gallery, setGallery] = useState([''])
@@ -148,7 +148,8 @@ export default function ArtistDashboard() {
 
     setSaving(true)
 
-    const payload = {
+    // Payload base
+    const basePayload = {
       title: title.trim(),
       description: description.trim(),
       image: finalGallery[0],
@@ -158,17 +159,9 @@ export default function ArtistDashboard() {
       estado_venta: 'publicada'
     }
 
-    if (directSale) {
-      payload.price_reference = parseFloat(price) || 0
-    } else {
-      payload.price = parseFloat(price) || 0
-      payload.fractions_total = parseInt(fractionsTotal, 10) || 0
-    }
-
-
-
     try {
       if (editId) {
+        // -------- EDITAR (PATCH) --------
         const payload = {}
 
         if (title.trim() !== initialArtwork.title) {
@@ -181,27 +174,42 @@ export default function ArtistDashboard() {
         const currentPrice = parseFloat(price) || 0
         const initialPrice = parseFloat(initialArtwork.price || initialArtwork.price_reference || 0)
         if (currentPrice !== initialPrice) {
-          payload.price = currentPrice
+          payload.price = currentPrice // <- siempre 'price'
         }
 
         if (!directSale) {
           const currentFractionsTotal = parseInt(fractionsTotal, 10) || 0
           const initialFractionsTotal = parseInt(initialArtwork.fractions_total, 10) || 0
           if (currentFractionsTotal !== initialFractionsTotal) {
-            payload.fractionsTotal = currentFractionsTotal
+            payload.fractions_total = currentFractionsTotal // <- snake_case para el back
           }
         }
 
-        const finalGallery = gallery.map(g => g.trim()).filter(Boolean)
-        const initialGallery = (Array.isArray(initialArtwork.gallery) && initialArtwork.gallery.length ? initialArtwork.gallery : [initialArtwork.image]).map(fixImageUrl)
-        if (JSON.stringify(finalGallery) !== JSON.stringify(initialGallery)) {
-          payload.image = finalGallery[0]
-          payload.gallery = finalGallery.slice(1)
+        const newGallery = finalGallery
+        const initialGallery = (Array.isArray(initialArtwork.gallery) && initialArtwork.gallery.length
+          ? initialArtwork.gallery
+          : [initialArtwork.image]
+        ).map(fixImageUrl)
+
+        if (JSON.stringify(newGallery) !== JSON.stringify(initialGallery)) {
+          payload.image = newGallery[0]
+          payload.gallery = newGallery.slice(1)
         }
 
         const initialTags = new Set(initialArtwork.tags || [])
         if (JSON.stringify(Array.from(tags).sort()) !== JSON.stringify(Array.from(initialTags).sort())) {
           payload.tags = Array.from(tags)
+        }
+
+        if (import.meta.env.DEV) {
+          const authHdr =
+            authService.client.defaults.headers?.Authorization ||
+            authService.client.defaults.headers?.common?.Authorization ||
+            null
+          console.log('[ArtistDashboard][PATCH] Will send → /artworks/%s/', editId)
+          console.log('  baseURL:', authService.client.defaults.baseURL)
+          console.log('  payload:', payload)
+          console.log('  Authorization present?:', !!authHdr, 'sample:', authHdr ? String(authHdr).slice(0, 18) + '…' : '(none)')
         }
 
         if (Object.keys(payload).length > 0) {
@@ -211,17 +219,30 @@ export default function ArtistDashboard() {
           setSuccessMsg('No se detectaron cambios.')
         }
       } else {
+        // -------- CREAR (POST) --------
         const createPayload = {
-          title: title.trim(),
-          description: description.trim(),
-          image: gallery.map(g => g.trim()).filter(Boolean)[0],
-          gallery: gallery.map(g => g.trim()).filter(Boolean).slice(1),
-          tags: Array.from(tags),
-          venta_directa: directSale,
-          estado_venta: 'publicada',
-          price_reference: parseFloat(price) || 0
+          ...basePayload,
+          price: parseFloat(price) || 0, // <- siempre 'price'
         }
-        await authService.client.post('/api/v1/artworks/create/', createPayload)
+        if (!directSale) {
+          createPayload.fractions_total = parseInt(fractionsTotal, 10) || 0
+        }
+
+        if (import.meta.env.DEV) {
+          const authHdr =
+            authService.client.defaults.headers?.Authorization ||
+            authService.client.defaults.headers?.common?.Authorization ||
+            null
+          console.log('[ArtistDashboard][POST] About to send request')
+          console.log('  url:', '/artworks/create/')
+          console.log('  baseURL:', authService.client.defaults.baseURL)
+          console.log('  venta_directa:', directSale)
+          console.log('  payload:', createPayload)
+          console.log('  Authorization present?:', !!authHdr, 'sample:', authHdr ? String(authHdr).slice(0, 18) + '…' : '(none)')
+        }
+
+        // ✅ endpoint correcto (sin /api/v1)
+        await authService.client.post('/artworks/create/', createPayload)
         setSuccessMsg('¡Obra publicada con éxito!')
       }
       setSuccessOpen(true)
@@ -315,7 +336,16 @@ export default function ArtistDashboard() {
                 <div className="mt-3">
                   <label className="form-label" htmlFor="price">Precio de Referencia (ARS)</label>
                   <p className="text-xs text-slate-500 -mt-1 mb-1">Este es el valor base para la obra, ya sea para venta directa o para el inicio de una subasta.</p>
-                  <input id="price" type="number" min={0} className="input w-56" placeholder="Ej. 1500.50" value={price} onChange={(e) => setPrice(e.target.value)} required />
+                  <input
+                    id="price"
+                    type="number"
+                    min={0}
+                    className="input w-56"
+                    placeholder="Ej. 1500.50"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    required
+                  />
                 </div>
 
                 <div className="mt-6">
@@ -347,7 +377,14 @@ export default function ArtistDashboard() {
                   <label className="form-label">Tags</label>
                   <div className="flex flex-wrap gap-2">
                     {['Abstracto', 'Mixta', 'Paisaje', 'Urbano', 'Naturaleza', 'Geométrico', 'Impresionismo', 'Minimal', 'Tinta', 'Óleo', 'Acrílico'].map((t) => (
-                      <button key={t} type="button" onClick={() => toggleTag(t)} className={`px-3 py-1.5 rounded-full border text-sm ${tags.has(t) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>{t}</button>
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => toggleTag(t)}
+                        className={`px-3 py-1.5 rounded-full border text-sm ${tags.has(t) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        {t}
+                      </button>
                     ))}
                   </div>
                 </div>
