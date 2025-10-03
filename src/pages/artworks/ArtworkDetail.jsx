@@ -2,14 +2,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import {
-  getArtworkById,
-  getArtworkRating,
-  rateArtwork
-} from '../../services/mockArtworks.js'
-import { buyFractions /* <- tokenizadas */, /* opcional: */ buyArtworkDirect } from '../../services/mockWallet.js'
+import authService from '../../services/authService.js'
+import { buyFractions /* tokenizadas (demo) */, buyArtworkDirect /* directas (demo) */ } from '../../services/mockWallet.js'
 
-// helper para generar el slug del artista (igual que en mocks)
+// --- helpers ---
 const slugify = (s = '') =>
   String(s)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -17,6 +13,24 @@ const slugify = (s = '') =>
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
+
+// Corrige URLs tipo "http://localhost/https%3A/res.cloudinary.com/..."
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  if (idx !== -1) return 'https://' + url.substring(idx + marker.length)
+  return url
+}
+
+// ¿Es venta directa? (usa campo de API y fallback por ausencia de fracciones)
+const detectDirect = (a) => {
+  const vd = a?.venta_directa
+  if (vd === 1 || vd === true || vd === '1') return true
+  const noFraction = a?.fractionFrom == null
+  const noTotals   = a?.fractionsTotal == null
+  return !!(noFraction && noTotals)
+}
 
 export default function ArtworkDetail(){
   const { id } = useParams()
@@ -28,9 +42,8 @@ export default function ArtworkDetail(){
   const [err, setErr] = useState(null)
   const [idx, setIdx] = useState(0) // imagen seleccionada
 
-  // rating
+  // rating (solo lectura desde API)
   const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
-  const canRate = !!user && user.role === 'buyer'
   const canBuy  = !!user && user.role === 'buyer'
 
   // --- compra (modal)
@@ -45,30 +58,69 @@ export default function ArtworkDetail(){
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    Promise.all([
-      getArtworkById(id),
-      getArtworkRating(id, user?.id)
-    ]).then(([item, r])=>{
-      if(!alive) return
-      setData(item)
-      setRating(r)
-      setLoading(false)
-    }).catch(e=>{
-      setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
-    })
-    return ()=>{ alive = false }
-  }, [id, user?.id])
+    setErr(null)
 
-  const isDirect = !!data?.directSale
-  const isSold     = data?.status === 'sold'
+    authService.client.get(`/artworks/${id}/`)
+      .then(res => {
+        if (!alive) return
+        const a = res?.data || {}
+
+        const artistName = a.artist?.name || a.artist || 'Artista'
+        const rawGallery = Array.isArray(a.gallery) && a.gallery.length ? a.gallery : [a.image]
+        const gallery = rawGallery.map(fixImageUrl).filter(Boolean)
+        const image = gallery[0] || ''
+
+        const mapped = {
+          id: a.id,
+          title: a.title || 'Obra',
+          artist: artistName,
+          status: String(a.status || '').toLowerCase(), // "approved", "auctioned", etc.
+          price: Number(a.price || 0),
+          fractionFrom: a.fractionFrom != null ? Number(a.fractionFrom) : null,
+          fractionsTotal: a.fractionsTotal != null ? Number(a.fractionsTotal) : null,
+          fractionsLeft: a.fractionsLeft != null ? Number(a.fractionsLeft) : null,
+          tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
+          image,
+          gallery,
+          createdAt: a.createdAt,
+          description: a.description || '',
+          // flags de venta
+          directSale: detectDirect(a),
+          directPrice: Number(a.price || 0),
+          // por si el back lo trae:
+          auctionDate: a.auctionDate || null,
+          estado_venta: a.estado_venta ? String(a.estado_venta).toLowerCase() : '',
+        }
+
+        // si el back no manda fractionsLeft pero sí total, asumimos todo disponible
+        if (!mapped.directSale && mapped.fractionsLeft == null && mapped.fractionsTotal != null) {
+          mapped.fractionsLeft = mapped.fractionsTotal
+        }
+
+        setData(mapped)
+        setRating(a.rating || { avg: 0, count: 0, my: 0 })
+        setLoading(false)
+      })
+      .catch(e=>{
+        const msg = e?.response?.status === 404 ? 'Obra no encontrada' : (e?.response?.data?.detail || e.message)
+        setErr(msg || 'No se pudo cargar la obra')
+        setLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [id])
+
+  const isDirect   = !!data?.directSale
   const isAuctioned = data?.status === 'auctioned'
+  const isSold      = isDirect && (data?.estado_venta === 'vendida')
 
   // valores para UI de tokenizadas
   const soldPct = useMemo(()=>{
     if(!data || isDirect) return 0
     const tot = Number(data.fractionsTotal || 0)
     if (!tot) return 0
-    return Math.round(100 - (Number(data.fractionsLeft||0) / tot) * 100)
+    const left = Number(data.fractionsLeft || 0)
+    return Math.round(100 - (left / tot) * 100)
   }, [data, isDirect])
 
   // precio “unitario”: fracción en tokenizadas, precio final en directas
@@ -83,7 +135,7 @@ export default function ArtworkDetail(){
     return Math.round(unit * Number(qty || 0) * 100) / 100
   }, [unit, qty, isDirect])
 
-  // --- formateo de fecha de subasta (solo si aplica)
+  // --- fecha de subasta (si aplica y existe)
   const auctionDateText = useMemo(()=>{
     if (!data?.auctionDate || isDirect) return null
     const iso = data.auctionDate
@@ -161,9 +213,9 @@ export default function ArtworkDetail(){
                   <div className="mt-1 flex items-center gap-1 text-amber-500">
                     <Star className="h-4 w-4"/>
                     <span className="text-sm font-semibold">
-                      { (rating.avg || data.rating || 0).toFixed ? (rating.avg || data.rating || 0).toFixed(1) : (rating.avg || data.rating || 0) }
+                      {(rating?.avg || 0).toFixed ? (rating?.avg || 0).toFixed(1) : (rating?.avg || 0)}
                     </span>
-                    <span className="text-xs text-slate-500">({rating.count} valoraciones)</span>
+                    <span className="text-xs text-slate-500">({rating?.count || 0} valoraciones)</span>
                   </div>
                 </div>
               </div>
@@ -186,10 +238,12 @@ export default function ArtworkDetail(){
               {/* fecha de subasta y progreso: SOLO tokenizadas */}
               {!isDirect && (
                 <>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                    <CalendarIcon className="h-5 w-5 text-slate-500" />
-                    <span><strong>Subasta:</strong> {auctionDateText || 'A definir'}</span>
-                  </div>
+                  {!!auctionDateText && (
+                    <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                      <CalendarIcon className="h-5 w-5 text-slate-500" />
+                      <span><strong>Subasta:</strong> {auctionDateText}</span>
+                    </div>
+                  )}
 
                   <div className="mt-2">
                     <div className="flex justify-between text-xs text-slate-600 mb-1">
@@ -211,31 +265,10 @@ export default function ArtworkDetail(){
                 ))}
               </div>
 
-              {/* ----- Bloque de valoración ----- */}
-              <div className="mt-2 border-t pt-3">
-                {canRate ? (
-                  <div>
-                    <div className="text-xs text-slate-600 mb-1">Tu valoración</div>
-                    <StarSelector
-                      value={rating.my}
-                      onChange={async (v)=>{
-                        const updated = await rateArtwork(data.id, user.id, v)
-                        setData(updated)
-                        const r = await getArtworkRating(data.id, user.id)
-                        setRating(r)
-                      }}
-                    />
-                    {!!rating.my && (
-                      <div className="text-xs text-slate-500 mt-1">Gracias por valorar esta obra.</div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500">
-                    Iniciá sesión como comprador para valorar esta obra.
-                  </div>
-                )}
+              {/* Bloque de valoración: solo lectura (de momento) */}
+              <div className="mt-2 border-t pt-3 text-xs text-slate-500">
+                Valoraciones disponibles: {rating?.count || 0}
               </div>
-              {/* -------------------------------- */}
 
               <div className="flex gap-2 pt-2">
                 <button
@@ -246,9 +279,9 @@ export default function ArtworkDetail(){
                     isDirect
                       ? (isSold ? 'Obra vendida' : 'Comprar obra')
                       : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
-                    }
-                  >
-                    {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
+                  }
+                >
+                  {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
                 </button>
                 <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
               </div>
@@ -267,9 +300,8 @@ export default function ArtworkDetail(){
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
               <li><strong>Publicación:</strong> {data.createdAt}</li>
-              {/* Subasta sólo si NO es venta directa */}
-              {!isDirect && <li><strong>Subasta:</strong> {auctionDateText || 'A definir'}</li>}
-              <li><strong>Rating:</strong> {rating.avg || data.rating || 0}</li>
+              {!isDirect && !!auctionDateText && <li><strong>Subasta:</strong> {auctionDateText}</li>}
+              <li><strong>Rating:</strong> {rating?.avg || 0}</li>
             </ul>
             <div className="mt-4">
               <button onClick={()=>navigate('/comprar')} className="btn btn-outline w-full">Volver al marketplace</button>
@@ -278,7 +310,7 @@ export default function ArtworkDetail(){
         </div>
       </div>
 
-      {/* ===== MODALES DE COMPRA ===== */}
+      {/* ===== MODALES DE COMPRA (demo con mockWallet) ===== */}
       {buyOpen && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
@@ -350,11 +382,11 @@ export default function ArtworkDetail(){
                         setBuying(true); setBuyErr('')
                         try{
                           if (isDirect) {
-                            // requiere buyArtworkDirect en mockWallet.js
                             await (buyArtworkDirect?.(user, data.id))
                           } else {
                             const res = await buyFractions(user, data.id, Number(qty||1))
-                            setData(res.artwork) // refresca ficha
+                            // refresca fracciones disponibles en la ficha (demo)
+                            setData(d => ({ ...d, fractionsLeft: res?.artwork?.fractionsLeft ?? d.fractionsLeft }))
                           }
                           setBuyOk(true)
                         }catch(e){
@@ -364,7 +396,7 @@ export default function ArtworkDetail(){
                         }
                       }}
                     >
-                      {buying ? 'Procesando…' : (isDirect ? `Comprar por $${fmt(total)}` : `Comprar por $${fmt(total)}`)}
+                      {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
                     </button>
                   </div>
                 </>
@@ -430,38 +462,3 @@ function CalendarIcon(props){ return (
   </svg>
 )}
 function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
-
-/* --- selector de estrellas --- */
-function StarSelector({ value = 0, onChange }){
-  const [hover, setHover] = useState(0)
-  const active = hover || value
-  return (
-    <div className="inline-flex items-center gap-1">
-      {[1,2,3,4,5].map(v=>(
-        <button
-          key={v}
-          type="button"
-          className="p-0.5"
-          onMouseEnter={()=>setHover(v)}
-          onMouseLeave={()=>setHover(0)}
-          onClick={()=>onChange?.(v)}
-          aria-label={`Valorar con ${v} estrellas`}
-          title={`${v} estrella${v>1?'s':''}`}
-        >
-          <StarIcon className={`h-6 w-6 ${v <= active ? 'text-yellow-500' : 'text-slate-300'}`} filled={v <= active}/>
-        </button>
-      ))}
-    </div>
-  )
-}
-function StarIcon({ className = '', filled = true }){
-  return filled ? (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
-      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
-    </svg>
-  )
-}
