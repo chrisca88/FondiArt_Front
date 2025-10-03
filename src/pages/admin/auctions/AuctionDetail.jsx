@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getAuctionById, closeAuction } from '../../../services/mockArtworks.js'
+import api from '../../../utils/api.js'
 
 export default function AuctionDetail(){
   const { id } = useParams()
@@ -24,17 +24,17 @@ export default function AuctionDetail(){
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    getAuctionById(id).then(item=>{
+    setErr(null)
+    api.get(`/api/v1/auctions/${id}/`).then(res => {
       if(!alive) return
+      const item = res.data
       setData(item)
-      if (item?.auction) {
-        setWinnerName(item.auction.winnerName || '')
-        setWinnerDni(item.auction.winnerDni || '')
-        setFinalPrice(item.auction.finalPrice || '')
-      }
+      setFinalPrice(item.final_price || '')
       setLoading(false)
     }).catch(e=>{
-      setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
+      if(!alive) return
+      setErr(e.response?.data?.detail || e.message || 'No se pudo cargar la subasta');
+      setLoading(false)
     })
     return ()=>{ alive=false }
   }, [id])
@@ -97,8 +97,14 @@ export default function AuctionDetail(){
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-3xl ring-1 ring-slate-200 bg-white/60">
               <img
-                src={data.image}
-                alt={data.title}
+                src={(() => {
+                  let imageUrl = data.artwork_image;
+                  if (typeof imageUrl === 'string' && !imageUrl.startsWith('http')) {
+                    imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                  }
+                  return imageUrl;
+                })()}
+                alt={data.artwork_title}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
               />
@@ -110,87 +116,43 @@ export default function AuctionDetail(){
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
-                  <p className="text-slate-600">{data.artist}</p>
+                  <h1 className="text-2xl font-extrabold leading-tight">{data.artwork_title}</h1>
+                  <p className="text-slate-600">{data.artist_name}</p>
                   <div className="text-sm text-slate-700 mt-1">
-                    <strong>Subasta:</strong> {auctionDateText || '—'}
+                    <strong>Inicio:</strong> {new Date(data.start_date).toLocaleString('es-AR')}
+                  </div>
+                  <div className="text-sm text-slate-700">
+                    <strong>Finaliza:</strong> {new Date(data.end_date).toLocaleString('es-AR')}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-xs ${isAuctioned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {isAuctioned ? 'Subastada' : 'Por subastar'}
+                <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${data.status === 'finished' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {data.status}
                 </span>
               </div>
 
-              {!isAuctioned && !canCloseToday && (
-                <div className="rounded-xl bg-amber-50 text-amber-700 p-3 text-sm">
-                  Solo se podrá registrar el ganador el día de la subasta ({auctionDateText || '—'}).
-                </div>
-              )}
-
-              {isAuctioned && data.auction && (
+              {data.status === 'finished' && (
                 <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
-                  <div><strong>Ganador:</strong> {data.auction.winnerName || '—'}</div>
-                  <div><strong>DNI:</strong> {data.auction.winnerDni || '—'}</div>
-                  <div><strong>Precio final:</strong> ${Number(data.auction.finalPrice||0).toLocaleString('es-AR')}</div>
-                  <div className="text-xs text-emerald-700/80 mt-1">
-                    Registrado el {new Date(data.auction.soldAt).toLocaleString('es-AR')}
-                  </div>
+                  <div><strong>Ganador:</strong> {data.buyer || '—'}</div>
+                  <div><strong>Precio final:</strong> ${Number(data.final_price||0).toLocaleString('es-AR')}</div>
                 </div>
               )}
 
-              {!isAuctioned && (
+              {data.status !== 'finished' && (
                 <>
                   <div>
                     <label className="form-label">Nombre del ganador</label>
-                    <input
-                      className="input"
-                      value={winnerName}
-                      onChange={e=>setWinnerName(e.target.value)}
-                      placeholder="Nombre y apellido"
-                      disabled={!canCloseToday}
-                    />
+                    <input className="input" placeholder="Nombre y apellido" disabled />
                   </div>
                   <div>
                     <label className="form-label">DNI</label>
-                    <input
-                      className="input"
-                      value={winnerDni}
-                      onChange={e=>setWinnerDni(e.target.value)}
-                      placeholder="Documento"
-                      disabled={!canCloseToday}
-                    />
+                    <input className="input" placeholder="Documento" disabled />
                   </div>
                   <div>
                     <label className="form-label">Precio final de subasta (ARS)</label>
-                    <input
-                      type="number"
-                      className="input"
-                      min={0}
-                      value={finalPrice}
-                      onChange={e=>setFinalPrice(e.target.value)}
-                      placeholder="Ej. 150000"
-                      disabled={!canCloseToday}
-                    />
+                    <input type="number" className="input" min={0} placeholder="Ej. 150000" disabled />
                   </div>
-
-                  {saveErr && <div className="text-sm text-red-600">{saveErr}</div>}
-
-                  <button
-                    className="btn btn-primary w-full disabled:opacity-60"
-                    disabled={saving || !winnerName || !winnerDni || !finalPrice || !canCloseToday}
-                    onClick={async ()=>{
-                      setSaving(true); setSaveErr('')
-                      try{
-                        await closeAuction(data.id, { winnerName, winnerDni, finalPrice })
-                        setOk(true)
-                      }catch(e){
-                        setSaveErr(e.message || 'No se pudo cerrar la subasta.')
-                      }finally{
-                        setSaving(false)
-                      }
-                    }}
-                  >
-                    {saving ? 'Guardando…' : 'Marcar como subastada'}
+                  <button className="btn btn-primary w-full" disabled>
+                    Marcar como subastada (Próximamente)
                   </button>
                 </>
               )}

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import api from '../../utils/api.js'
-
 const FRACTIONS_TOTAL = 100000
 
 export default function AdminArtworkReview(){
@@ -40,16 +39,8 @@ export default function AdminArtworkReview(){
       setAuctionDate(item.auctionDate || '')
       setLoading(false)
 
-      if (item.status === 'Approved') {
-        api.get(`/api/v1/blockchain/artwork/${item.id}/contract/`)
-          .then(contractRes => {
-            if (alive) setContractAddress(contractRes.data.contract_address)
-          })
-          .catch(contractErr => {
-            if (contractErr.response?.status !== 404) {
-              console.error("Error fetching contract address:", contractErr)
-            }
-          })
+      if (item.status === 'Approved' && item.contract_address) {
+        setContractAddress(item.contract_address)
       }
     }).catch(e=>{
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
@@ -112,7 +103,7 @@ export default function AdminArtworkReview(){
         auctionDate,
         status: 'Approved'
       }
-      const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/update/`, artworkUpdatePayload)
+      const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/`, artworkUpdatePayload)
 
       // 2. Create the auction
       const startDate = new Date(`${auctionDate}T12:00:00Z`);
@@ -127,18 +118,20 @@ export default function AdminArtworkReview(){
       await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload);
 
       // 3. Tokenize the artwork
-      await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id });
+      await api.post(`/api/v1/artworks/${data.id}/tokenize/`);
 
-      // 4. Fetch contract address to display it immediately
+      // 4. Re-fetch artwork data to get the contract address and latest status
       try {
-        const contractRes = await api.get(`/api/v1/blockchain/artwork/${data.id}/contract/`)
-        setContractAddress(contractRes.data.contract_address)
+        const artworkRes = await api.get(`/api/v1/artworks/${data.id}/`)
+        setData(artworkRes.data) // This is the most up-to-date version
+        if (artworkRes.data.contract_address) {
+          setContractAddress(artworkRes.data.contract_address)
+        }
       } catch (e) {
-        console.warn("Could not fetch contract address immediately after tokenization.", e)
+        console.warn("Could not re-fetch artwork data after tokenization.", e)
+        // Fallback to the data from the initial PATCH if re-fetch fails
+        setData(updatedArtwork);
       }
-
-      // 5. Update local state to reflect changes
-      setData(updatedArtwork);
 
       setSuccessMsg('Obra aprobada, subasta creada y tokenización iniciada.')
       setSuccessOpen(true)
@@ -155,7 +148,7 @@ export default function AdminArtworkReview(){
     if (saving) return
     setSaving(true)
     try {
-      await api.patch(`/api/v1/artworks/${data.id}/update/`, { status: 'Pending' })
+      await api.patch(`/api/v1/artworks/${data.id}/`, { status: 'Pending' })
       setSuccessMsg('La obra volvió a estado pendiente.')
       setSuccessOpen(true)
       setTimeout(() => navigate('/admin', { replace: true }), 1200)
@@ -181,7 +174,19 @@ export default function AdminArtworkReview(){
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-3xl ring-1 ring-slate-200 bg-white/60">
               <img
-                src={data.gallery[idx] || data.image}
+                src={(() => {
+                  let imageUrl = data.gallery[idx] || data.image;
+                  if (typeof imageUrl === 'string') {
+                    const marker = 'https%3A/';
+                    const index = imageUrl.indexOf(marker);
+                    if (index !== -1) {
+                      imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+                    } else if (!imageUrl.startsWith('http')) {
+                      imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                    }
+                  }
+                  return imageUrl;
+                })()}
                 alt={data.title}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
@@ -191,7 +196,23 @@ export default function AdminArtworkReview(){
               {data.gallery.map((src, i)=>(
                 <button key={i} onClick={()=>setIdx(i)}
                   className={`overflow-hidden rounded-2xl ring-1 ${idx===i ? 'ring-indigo-500' : 'ring-slate-200'} bg-white/60`}>
-                  <img src={src} alt={`mini ${i+1}`} className="h-20 w-28 object-cover"/>
+                  <img
+                    src={(() => {
+                      let imageUrl = src;
+                      if (typeof imageUrl === 'string') {
+                        const marker = 'https%3A/';
+                        const index = imageUrl.indexOf(marker);
+                        if (index !== -1) {
+                          imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+                        } else if (!imageUrl.startsWith('http')) {
+                          imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                        }
+                      }
+                      return imageUrl;
+                    })()}
+                    alt={`mini ${i+1}`}
+                    className="h-20 w-28 object-cover"
+                  />
                 </button>
               ))}
             </div>
@@ -294,10 +315,9 @@ export default function AdminArtworkReview(){
               <li><strong>Autor:</strong> {data.artist?.name}</li>
               <li><strong>Publicación:</strong> {new Date(data.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</li>
               <li><strong>Estado:</strong> {data.status}</li>
-              <li><strong>Subasta:</strong> {data.auctionDate || '—'}</li>
-              {contractAddress && (
-                <li>
-                  <strong>Contrato:</strong>
+              <li>
+                <strong>Subasta:</strong>
+                {contractAddress ? (
                   <a
                     href={`https://sepolia.etherscan.io/address/${contractAddress}`}
                     target="_blank"
@@ -307,8 +327,10 @@ export default function AdminArtworkReview(){
                   >
                     {contractAddress}
                   </a>
-                </li>
-              )}
+                ) : (
+                  <span className="ml-1">{data.auctionDate || '—'}</span>
+                )}
+              </li>
             </ul>
           </div>
         </div>

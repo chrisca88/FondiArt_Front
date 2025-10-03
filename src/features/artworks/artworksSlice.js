@@ -11,8 +11,9 @@ export const fetchArtworks = createAsyncThunk('artworks/fetch', async (_, thunkA
 })
 
 export const createArtwork = createAsyncThunk('artworks/create', async (payload, thunkAPI)=>{
+  console.log('Sending payload to /api/v1/artworks/create/:', payload);
   try{
-    const { data } = await api.post('/api/artworks/', payload)
+    const { data } = await api.post('/api/v1/artworks/create/', payload)
     return data
   }catch(err){
     return thunkAPI.rejectWithValue(err.response?.data || 'CREATE_FAIL')

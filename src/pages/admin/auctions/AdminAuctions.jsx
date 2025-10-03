@@ -1,26 +1,77 @@
 // src/pages/admin/auctions/AdminAuctions.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate } from 'react-router-dom'
-import { listAuctions } from '../../../services/mockArtworks.js'
+import api from '../../../utils/api.js'
 
 export default function AdminAuctions(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
 
   const [tab, setTab] = useState('today') // today | upcoming | finished
-  const [items, setItems] = useState([])
+  const [allAuctions, setAllAuctions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    listAuctions(tab).then(res=>{
+    setError(null)
+    api.get('/api/v1/auctions/').then(res=>{
       if(!alive) return
-      setItems(res); setLoading(false)
+      setAllAuctions(res.data.results || [])
+      setLoading(false)
+    }).catch(err => {
+      if(!alive) return
+      console.error("Error fetching auctions:", err)
+      setError('No se pudieron cargar las subastas.')
+      setLoading(false)
     })
     return ()=>{ alive=false }
-  }, [tab])
+  }, [])
+
+  const items = useMemo(() => {
+    console.log(`Recalculating filtered items. Tab: ${tab}, Total auctions: ${allAuctions.length}`);
+    const now = new Date()
+    const todayStart = new Date(now.setHours(0, 0, 0, 0))
+    const todayEnd = new Date(now.setHours(23, 59, 59, 999))
+
+    switch (tab) {
+      case 'today':
+        return allAuctions.filter(a => {
+          const startDate = new Date(a.start_date)
+          return startDate >= todayStart && startDate <= todayEnd
+        })
+      case 'upcoming':
+        return allAuctions.filter(a => new Date(a.start_date) > todayEnd)
+      case 'finished':
+        return allAuctions.filter(a => new Date(a.end_date) < todayStart)
+      default:
+        return []
+    }
+  }, [allAuctions, tab])
+
+  const handleDeleteAuction = async (id, title) => {
+    console.log(`Attempting to delete auction ID: ${id}`);
+    if (!window.confirm(`¿Estás seguro de que querés eliminar la subasta para la obra "${title}"? Esta acción no se puede deshacer.`)) {
+      console.log("Deletion cancelled by user.");
+      return
+    }
+    try {
+      await api.delete(`/api/v1/auctions/${id}/`)
+      console.log(`Successfully deleted auction ID: ${id} from API.`);
+      setAllAuctions(prev => {
+        console.log("Previous auctions count:", prev.length);
+        const newAuctions = prev.filter(a => a.id !== id);
+        console.log("New auctions count:", newAuctions.length);
+        return newAuctions;
+      })
+    } catch (err) {
+      console.error("Error deleting auction:", err)
+      window.alert(err.response?.data?.detail || 'No se pudo eliminar la subasta.')
+    }
+  }
+
 
   if (user?.role !== 'admin'){
     return (
@@ -55,36 +106,64 @@ export default function AdminAuctions(){
       </div>
 
       <div className="section-frame pb-16">
-        {loading ? <GridSkeleton/> : (
+        {loading ? <GridSkeleton/> : error ? (
+          <div className="card-surface p-8 text-center text-red-600">
+            {error}
+          </div>
+        ) : (
           items.length === 0 ? (
             <div className="card-surface p-8 text-center text-slate-600">
-              No hay obras en esta categoría.
+              No hay subastas en esta categoría.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {items.map(it => (
                 <article key={it.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
-                  <img src={it.image} alt={it.title} className="aspect-[4/3] w-full object-cover"/>
+                  <img
+                    src={(() => {
+                      let imageUrl = it.artwork_image;
+                      if (typeof imageUrl === 'string') {
+                        const marker = 'https%3A/';
+                        const index = imageUrl.indexOf(marker);
+                        if (index !== -1) {
+                          imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+                        } else if (!imageUrl.startsWith('http')) {
+                          imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                        }
+                      }
+                      return imageUrl;
+                    })()}
+                    alt={it.artwork_title}
+                    className="aspect-[4/3] w-full object-cover"
+                  />
                   <div className="p-4 space-y-2">
-                    <div className="font-bold line-clamp-1">{it.title}</div>
-                    <div className="text-sm text-slate-600">{it.artist}</div>
-                    <div className="text-xs text-slate-500">Subasta: {it.auctionDate || '—'}</div>
+                    <div className="font-bold line-clamp-1">{it.artwork_title}</div>
+                    <div className="text-sm text-slate-600">{it.artist_name}</div>
+                    <div className="text-xs text-slate-500">
+                      Inicia: {new Date(it.start_date).toLocaleString('es-AR')}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Finaliza: {new Date(it.end_date).toLocaleString('es-AR')}
+                    </div>
 
-                    {tab === 'finished' && it.auction && (
+                    {tab === 'finished' && (
                       <div className="mt-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs p-2">
-                        Ganador: <strong>{it.auction.winnerName || '—'}</strong><br/>
-                        DNI: {it.auction.winnerDni || '—'} • Precio: ${Number(it.auction.finalPrice||0).toLocaleString('es-AR')}
+                        Ganador: <strong>{it.buyer || '—'}</strong><br/>
+                        Precio final: ${Number(it.final_price||0).toLocaleString('es-AR')}
                       </div>
                     )}
 
-                    <div className="mt-3">
-                      {tab === 'finished' ? (
-                        <Link to={`/admin/subasta/${it.id}`} className="btn btn-outline w-full">Ver</Link>
-                      ) : tab === 'upcoming' ? (
-                        <Link to={`/admin/subasta/${it.id}`} className="btn btn-outline w-full">Ver</Link>
-                      ) : (
-                        <button className="btn btn-primary w-full" onClick={()=>navigate(`/admin/subasta/${it.id}`)}>Gestionar</button>
-                      )}
+                    <div className="mt-3 flex items-center gap-2">
+                      <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
+                        {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
+                      </Link>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
+                        className="btn btn-outline shrink-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                        title="Eliminar subasta"
+                      >
+                        <TrashIcon/>
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -122,5 +201,14 @@ function GridSkeleton(){
         </div>
       ))}
     </div>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+      <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+    </svg>
   )
 }

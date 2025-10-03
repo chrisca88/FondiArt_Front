@@ -218,15 +218,10 @@ export default function ArtistDashboard() {
           gallery: gallery.map(g => g.trim()).filter(Boolean).slice(1),
           tags: Array.from(tags),
           venta_directa: directSale,
-          estado_venta: 'publicada'
+          estado_venta: 'publicada',
+          price_reference: parseFloat(price) || 0
         }
-        if (directSale) {
-          createPayload.price_reference = parseFloat(price) || 0
-        } else {
-          createPayload.price = parseFloat(price) || 0
-          createPayload.fractions_total = parseInt(fractionsTotal, 10) || 0
-        }
-        await authService.client.post('/artworks/create/', createPayload)
+        await authService.client.post('/api/v1/artworks/create/', createPayload)
         setSuccessMsg('¡Obra publicada con éxito!')
       }
       setSuccessOpen(true)
@@ -313,15 +308,14 @@ export default function ArtistDashboard() {
                 <div className="mt-5">
                   <label className="inline-flex items-center gap-2">
                     <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={directSale} onChange={(e) => setDirectSale(e.target.checked)} />
-                    <span className="text-slate-800 font-medium">Venta directa</span>
+                    <span className="text-slate-800 font-medium">Habilitar Venta Directa</span>
                   </label>
-                  {directSale && (
-                    <div className="mt-3">
-                      <label className="form-label" htmlFor="price">Precio de Referencia (ARS)</label>
-                      <input id="price" type="number" min={0} className="input w-56" placeholder="Ej. 1500.50" value={price} onChange={(e) => setPrice(e.target.value)} required />
-                    </div>
-                  )}
+                </div>
 
+                <div className="mt-3">
+                  <label className="form-label" htmlFor="price">Precio de Referencia (ARS)</label>
+                  <p className="text-xs text-slate-500 -mt-1 mb-1">Este es el valor base para la obra, ya sea para venta directa o para el inicio de una subasta.</p>
+                  <input id="price" type="number" min={0} className="input w-56" placeholder="Ej. 1500.50" value={price} onChange={(e) => setPrice(e.target.value)} required />
                 </div>
 
                 <div className="mt-6">
