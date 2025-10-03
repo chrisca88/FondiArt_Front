@@ -2,19 +2,90 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { listArtworks } from '../../services/mockArtworks.js'
+import authService from '../../services/authService.js'
 import ArtworkCard from '../../components/artworks/ArtworkCard.jsx'
 import RecommendedRow from '../../components/artworks/RecommendedRow.jsx'
+
+/** Mapea el sort del UI al sort del backend */
+const toApiSort = (ui) => {
+  if (ui === 'newest') return 'newest'
+  if (ui === 'price-asc') return 'price-asc'
+  if (ui === 'price-desc') return 'price-desc'
+  return undefined // 'relevance' -> orden por defecto de queryset
+}
+
+/** Corrige URLs con https%3A/ incrustado */
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  if (idx !== -1) return 'https://' + url.substring(idx + marker.length)
+  return url
+}
+
+/** Normaliza para comparar (sin tildes, lowercase) */
+const norm = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+/** ¿Es venta directa? usa campo de API y un fallback por nulos */
+const detectDirect = (a) => {
+  const vd = a?.venta_directa
+  if (vd === 1 || vd === true || vd === '1') return true
+  // Fallback: si no hay fracción ni totales, lo tratamos como directa
+  const noFraction = a?.fractionFrom == null
+  const noTotals   = a?.fractionsTotal == null
+  return !!(noFraction && noTotals)
+}
+
+/** Normaliza un item de API al shape que espera ArtworkCard */
+const mapApiItemToCard = (a) => {
+  const isDirect = detectDirect(a)
+
+  const fractionsTotal = isDirect ? 1 : Number(a.fractionsTotal || 0)
+  let fractionsLeft = isDirect ? 1 : a.fractionsLeft
+  // si el back no envía fractionsLeft pero sí fractionsTotal, asumimos todo disponible
+  if (!isDirect && fractionsLeft == null) fractionsLeft = fractionsTotal
+
+  return {
+    id: a.id,
+    title: a.title,
+    artist: a.artist?.name || a.artist || '',
+    price: Number(a.price || 0),
+    fractionFrom: Number(a.fractionFrom || 0),
+    fractionsTotal,
+    fractionsLeft: Number(fractionsLeft || 0),
+    image: fixImageUrl(a.image),
+    tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
+    rating: Number(a.rating?.avg || 0),
+    createdAt: a.createdAt,
+    __isDirect: isDirect,
+    __estadoVenta: String(a.estado_venta || '').toLowerCase(),
+    __status: String(a.status || '').toLowerCase(), // "Approved" -> "approved"
+  }
+}
+
+/** Disponible en marketplace según reglas */
+const isAvailable = (item) => {
+  if (item.__status !== 'approved') return false
+  if (item.__isDirect) {
+    const sold = item.__estadoVenta === 'vendida' || item.sold === true
+    return !sold
+  }
+  const left = item.fractionsLeft ?? 0
+  return Number(left) > 0
+}
 
 export default function BuyerDashboard(){
   const [items, setItems] = useState([])
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('relevance')
   const [tag, setTag] = useState('')
-  const [loading, setLoading] = useState(true)
-
-  // NUEVO: filtro tipo de venta
   const [sale, setSale] = useState('all') // 'all' | 'direct' | 'tokenized'
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const user = useSelector(s => s.auth.user)
   const favKey = useMemo(()=> user?.id ? `fav_${user.id}` : 'fav_anon', [user?.id])
@@ -22,10 +93,15 @@ export default function BuyerDashboard(){
 
   const navigate = useNavigate()
 
-  useEffect(()=>{ try{
-    const arr = JSON.parse(localStorage.getItem(favKey) || '[]')
-    setFavs(new Set(arr))
-  }catch{ setFavs(new Set()) } }, [favKey])
+  // cargar favoritos por usuario
+  useEffect(()=>{
+    try{
+      const arr = JSON.parse(localStorage.getItem(favKey) || '[]')
+      setFavs(new Set(arr))
+    }catch{
+      setFavs(new Set())
+    }
+  }, [favKey])
 
   const toggleFav = (artId)=>{
     setFavs(prev => {
@@ -37,29 +113,58 @@ export default function BuyerDashboard(){
     })
   }
 
+  // Fetch desde API real (paginado: usamos .results)
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    listArtworks({ q, sort, sale }).then(data=>{
-      if (!alive) return
-      setItems(data)
-      setLoading(false)
-    })
+    setError('')
+
+    const params = {}
+    if (q?.trim()) params.q = q.trim()
+    // ⚠️ No enviamos ?tag= al backend para evitar el 500 (filtramos local)
+    const apiSort = toApiSort(sort)
+    if (apiSort) params.sort = apiSort
+
+    authService.client
+      .get('/artworks/', { params })
+      .then(res => {
+        if (!alive) return
+        const payload = res?.data
+        const list = Array.isArray(payload) ? payload
+                  : Array.isArray(payload?.results) ? payload.results
+                  : []
+        let mapped = list.map(mapApiItemToCard).filter(isAvailable)
+
+        // Filtro por tipo de venta (UI)
+        if (sale === 'direct') mapped = mapped.filter(x => x.__isDirect)
+        if (sale === 'tokenized') mapped = mapped.filter(x => !x.__isDirect)
+
+        // Filtro por tag (cliente) — case-insensitive y sin acentos
+        if (tag?.trim()) {
+          const wanted = norm(tag)
+          mapped = mapped.filter(it => (it.tags || []).some(t => norm(t) === wanted))
+        }
+
+        setItems(mapped)
+      })
+      .catch(err => {
+        console.error('[BuyerDashboard] GET /artworks/ error:', err?.response?.data || err.message)
+        setError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar las obras.')
+      })
+      .finally(()=>{
+        if (alive) setLoading(false)
+      })
+
     return ()=>{ alive = false }
-  }, [q, sort, sale])
+  }, [q, sort, tag, sale])
 
-  const viewItems = useMemo(()=>{
-    let arr = items
-    if (tag) arr = arr.filter(x => x.tags.includes(tag))
-    return arr
-  }, [items, tag])
-
-  const empty = !loading && viewItems.length === 0
+  const viewItems = items
+  const empty = !loading && !error && viewItems.length === 0
 
   const metrics = useMemo(()=>{
     const total = viewItems.length
     const artists = new Set(viewItems.map(i=>i.artist)).size
-    const avg = viewItems.length ? (viewItems.reduce((a,c)=>a+c.rating,0)/viewItems.length).toFixed(1) : '–'
+    const avg = viewItems.length ? (viewItems.reduce((a,c)=>a + Number(c.rating || 0),0)/viewItems.length).toFixed(1) : '–'
     return { total, artists, avg }
   }, [viewItems])
 
@@ -113,7 +218,8 @@ export default function BuyerDashboard(){
                 <option value="price-asc">Precio: menor a mayor</option>
                 <option value="price-desc">Precio: mayor a menor</option>
               </select>
-              {/* NUEVO: filtro tipo de venta */}
+
+              {/* Filtro tipo de venta usando venta_directa */}
               <select className="input w-48" value={sale} onChange={e=>setSale(e.target.value)}>
                 <option value="all">Todas</option>
                 <option value="direct">Venta directa</option>
@@ -139,9 +245,15 @@ export default function BuyerDashboard(){
           </div>
         )}
 
+        {!loading && error && (
+          <div className="card-surface p-6 text-center text-red-600">
+            {error}
+          </div>
+        )}
+
         {empty && <EmptyState/>}
 
-        {!loading && !empty && (
+        {!loading && !error && !empty && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {viewItems.map(item => (
               <ArtworkCard
@@ -160,23 +272,27 @@ export default function BuyerDashboard(){
 }
 
 /* --- auxiliares --- */
-function Metric({ label, value }){ /* igual que antes */ return (
-  <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-center">
-    <div className="text-2xl font-extrabold">{value}</div>
-    <div className="text-[11px] tracking-wider uppercase text-slate-500">{label}</div>
-  </div>
-)}
-function Chip({ label, active, onClick }){ /* igual que antes */ return (
-  <button
-    onClick={onClick}
-    className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap transition
-                ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                         : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white'}`}
-  >
-    {label}
-  </button>
-)}
-function SkeletonCard(){ /* igual que antes */ 
+function Metric({ label, value }){
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-center">
+      <div className="text-2xl font-extrabold">{value}</div>
+      <div className="text-[11px] tracking-wider uppercase text-slate-500">{label}</div>
+    </div>
+  )
+}
+function Chip({ label, active, onClick }){
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap transition
+                  ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                           : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white'}`}
+    >
+      {label}
+    </button>
+  )
+}
+function SkeletonCard(){
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
       <div className="aspect-[4/3] w-full animate-pulse bg-slate-200/70" />
@@ -190,7 +306,7 @@ function SkeletonCard(){ /* igual que antes */
     </div>
   )
 }
-function EmptyState(){ /* igual que antes */ 
+function EmptyState(){
   return (
     <div className="card-surface p-12 text-center">
       <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-indigo-600/10 text-indigo-600">
