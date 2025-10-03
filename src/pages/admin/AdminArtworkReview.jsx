@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { getArtworkById, updateArtwork } from '../../services/mockArtworks.js'
+import api from '../../utils/api.js'
 
 const FRACTIONS_TOTAL = 100000
 
@@ -16,6 +16,7 @@ export default function AdminArtworkReview(){
   const [err, setErr] = useState(null)
   const [saving, setSaving] = useState(false)
   const [idx, setIdx] = useState(0)
+  const [contractAddress, setContractAddress] = useState(null)
 
   // precio base editable por el admin
   const [basePrice, setBasePrice] = useState(0)
@@ -30,20 +31,42 @@ export default function AdminArtworkReview(){
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    getArtworkById(id).then(item=>{
+    setContractAddress(null)
+    api.get(`/api/v1/artworks/${id}/`).then(res => {
       if(!alive) return
+      const item = res.data
       setData(item)
       setBasePrice(Number(item.price || 0))
       setAuctionDate(item.auctionDate || '')
       setLoading(false)
+
+      if (item.status === 'Approved') {
+        api.get(`/api/v1/blockchain/artwork/${item.id}/contract/`)
+          .then(contractRes => {
+            if (alive) setContractAddress(contractRes.data.contract_address)
+          })
+          .catch(contractErr => {
+            if (contractErr.response?.status !== 404) {
+              console.error("Error fetching contract address:", contractErr)
+            }
+          })
+      }
     }).catch(e=>{
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
     })
     return ()=>{ alive = false }
   }, [id])
 
-  const isPending = useMemo(()=> data && (data.status === 'pending'), [data])
+  const isPending = useMemo(()=> data && (data.status === 'Pending'), [data])
   const unit = useMemo(() => Number(((Number(basePrice)||0) / FRACTIONS_TOTAL).toFixed(2)), [basePrice])
+
+  const statusConfig = {
+    Pending: { text: 'Pendiente', className: 'bg-amber-100 text-amber-700' },
+    Approved: { text: 'Aprobado', className: 'bg-emerald-100 text-emerald-700' },
+    Rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700' },
+    default: { text: data?.status || 'Desconocido', className: 'bg-slate-100 text-slate-700' }
+  };
+  const currentStatus = statusConfig[data?.status] || statusConfig.default;
 
   if (user?.role !== 'admin'){
     return (
@@ -68,40 +91,80 @@ export default function AdminArtworkReview(){
   )
   if (!data) return null
 
-  const onGenerateSC = async ()=>{
+  const onGenerateSC = async () => {
     if (saving) return
-    if (!basePrice || basePrice <= 0){
+    if (!basePrice || basePrice <= 0) {
       window.alert('Ingresá un precio base válido.')
       return
     }
-    if (!auctionDate){
+    if (!auctionDate) {
       window.alert('Seleccioná la fecha de subasta.')
       return
     }
     setSaving(true)
-    try{
-      await updateArtwork(data.id, {
+    try {
+      // 1. Update artwork details and status
+      const artworkUpdatePayload = {
         price: Number(basePrice),
         fractionFrom: unit,
         fractionsTotal: FRACTIONS_TOTAL,
+        fractionsLeft: 30000,
         auctionDate,
-        status: 'approved'
-      })
-      setSuccessMsg('Smart Contract generado y obra aprobada.')
+        status: 'Approved'
+      }
+      const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/update/`, artworkUpdatePayload)
+
+      // 2. Create the auction
+      const startDate = new Date(`${auctionDate}T12:00:00Z`);
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 7); // Auction ends 7 days after start
+
+      const auctionPayload = {
+        start_price: Number(basePrice),
+        start_date: startDate.toISOString(),
+        end_date: endDate.toISOString(),
+      };
+      await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload);
+
+      // 3. Tokenize the artwork
+      await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id });
+
+      // 4. Fetch contract address to display it immediately
+      try {
+        const contractRes = await api.get(`/api/v1/blockchain/artwork/${data.id}/contract/`)
+        setContractAddress(contractRes.data.contract_address)
+      } catch (e) {
+        console.warn("Could not fetch contract address immediately after tokenization.", e)
+      }
+
+      // 5. Update local state to reflect changes
+      setData(updatedArtwork);
+
+      setSuccessMsg('Obra aprobada, subasta creada y tokenización iniciada.')
       setSuccessOpen(true)
-      setTimeout(()=> navigate('/admin', { replace: true }), 1300)
-    }finally{ setSaving(false) }
+    } catch (err) {
+      console.error("Error during artwork approval, auction creation, or tokenization:", err)
+      const errorMsg = err.response?.data?.detail || err.response?.data?.[0] || err.message || 'Ocurrió un error.'
+      window.alert(errorMsg)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const onMarkPending = async ()=>{
+  const onMarkPending = async () => {
     if (saving) return
     setSaving(true)
-    try{
-      await updateArtwork(data.id, { status: 'pending' })
+    try {
+      await api.patch(`/api/v1/artworks/${data.id}/update/`, { status: 'Pending' })
       setSuccessMsg('La obra volvió a estado pendiente.')
       setSuccessOpen(true)
-      setTimeout(()=> navigate('/admin', { replace: true }), 1200)
-    }finally{ setSaving(false) }
+      setTimeout(() => navigate('/admin', { replace: true }), 1200)
+    } catch (err) {
+      console.error("Error setting artwork to pending:", err)
+      window.alert(err.response?.data?.detail || err.message || 'No se pudo actualizar la obra.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -139,16 +202,16 @@ export default function AdminArtworkReview(){
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start gap-4">
                 <div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold">
-                  {data.artist.split(' ').map(s=>s[0]).slice(0,2).join('')}
+                  {data.artist?.name?.split(' ').map(s=>s[0]).slice(0,2).join('')}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${isPending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {isPending ? 'Pendiente' : 'Aprobada'}
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${currentStatus.className}`}>
+                      {currentStatus.text}
                     </span>
                   </div>
-                  <p className="text-slate-600">{data.artist}</p>
+                  <p className="text-slate-600">{data.artist?.name}</p>
                 </div>
               </div>
 
@@ -228,10 +291,24 @@ export default function AdminArtworkReview(){
           <div className="card-surface p-6">
             <h3 className="text-lg font-bold">Metadatos</h3>
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
-              <li><strong>Autor:</strong> {data.artist}</li>
-              <li><strong>Publicación:</strong> {data.createdAt}</li>
+              <li><strong>Autor:</strong> {data.artist?.name}</li>
+              <li><strong>Publicación:</strong> {new Date(data.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</li>
               <li><strong>Estado:</strong> {data.status}</li>
               <li><strong>Subasta:</strong> {data.auctionDate || '—'}</li>
+              {contractAddress && (
+                <li>
+                  <strong>Contrato:</strong>
+                  <a
+                    href={`https://sepolia.etherscan.io/address/${contractAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-1 text-indigo-600 hover:underline break-all"
+                    title="Ver en Etherscan"
+                  >
+                    {contractAddress}
+                  </a>
+                </li>
+              )}
             </ul>
           </div>
         </div>
@@ -241,7 +318,7 @@ export default function AdminArtworkReview(){
       {successOpen && (
         <SuccessModal
           message={successMsg}
-          onClose={()=>{ setSuccessOpen(false); navigate('/admin', { replace: true }) }}
+          onClose={()=>{ setSuccessOpen(false) }}
         />
       )}
     </section>

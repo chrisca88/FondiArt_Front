@@ -2,21 +2,43 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { listMyArtworks } from '../../services/mockArtworks.js'
+import api from '../../utils/api.js'
 
 export default function MyWorks(){
   const user = useSelector(s => s.auth.user)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const navigate = useNavigate()
 
   useEffect(()=>{
+    console.log('Current user:', user)
+    if (!user?.id) {
+      setLoading(false)
+      setError("No user ID found. Cannot fetch artworks.")
+      console.error("No user ID found in Redux store.")
+      return
+    }
+
     let alive = true
     setLoading(true)
-    listMyArtworks(user).then(data=>{
-      if(!alive) return
-      setItems(data); setLoading(false)
-    })
+    setError(null)
+    
+    api.get(`/api/v1/users/${user.id}/artworks/`)
+      .then(res => {
+        if (!alive) return
+        console.log('Artworks fetched successfully:', res.data)
+        setItems(res.data.results || [])
+        setLoading(false)
+      })
+      .catch(err => {
+        if (!alive) return
+        const errorMsg = err.response?.data?.message || err.message || "An unknown error occurred."
+        console.error("Error fetching artworks:", errorMsg, err)
+        setError(errorMsg)
+        setLoading(false)
+      })
+
     return ()=>{ alive = false }
   }, [user])
 
@@ -39,14 +61,21 @@ export default function MyWorks(){
       <div className="section-frame pb-16">
         {loading && <GridSkeleton/>}
 
-        {!loading && items.length === 0 && (
+        {error && (
+          <div className="card-surface p-10 text-center bg-red-50 border-red-200">
+            <h3 className="text-xl font-bold text-red-800">Ocurrió un error</h3>
+            <p className="text-red-600 mt-1">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && items.length === 0 && (
           <div className="card-surface p-10 text-center">
             <h3 className="text-xl font-bold">Todavía no publicaste obras</h3>
             <p className="text-slate-600 mt-1">Usá el botón “Publicar obra” para empezar.</p>
           </div>
         )}
 
-        {!loading && items.length > 0 && (
+        {!loading && !error && items.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {items.map(it => (
               <OwnerArtworkCard
@@ -65,23 +94,40 @@ export default function MyWorks(){
 function OwnerArtworkCard({ item, onStats }){
   const sold = item.fractionsTotal - item.fractionsLeft
   const pct = Math.round(sold / (item.fractionsTotal || 1) * 100)
-  const pending = item.status === 'pending'
+
+  const statusConfig = {
+    pending: { text: 'Pendiente', className: 'bg-amber-100 text-amber-700', title: 'Pendiente de aprobación' },
+    approved: { text: 'Aprobado', className: 'bg-emerald-100 text-emerald-700', title: 'Aprobado' },
+    rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700', title: 'Rechazada' },
+    default: { text: item.status || 'Desconocido', className: 'bg-slate-100 text-slate-700', title: `Estado: ${item.status}` }
+  }
+  const currentStatus = statusConfig[item.status] || statusConfig.default
+
+  let imageUrl = item.image;
+  if (typeof imageUrl === 'string') {
+    const marker = 'https%3A/';
+    const index = imageUrl.indexOf(marker);
+    if (index !== -1) {
+      imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70 flex flex-col">
-      <img src={item.image} alt={item.title} className="aspect-[4/3] w-full object-cover"/>
+      <img src={imageUrl} alt={item.title} className="aspect-[4/3] w-full object-cover"/>
       <div className="p-4 space-y-2 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="font-bold">{item.title}</div>
           <span
-            className={`rounded-full px-2 py-0.5 text-xs shrink-0
-              ${pending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}
-            title={pending ? 'Pendiente de aprobación' : 'Aprobada'}
+            className={`rounded-full px-2 py-0.5 text-xs shrink-0 ${currentStatus.className}`}
+            title={currentStatus.title}
           >
-            {pending ? 'Pendiente' : 'Aprobada'}
+            {currentStatus.text}
           </span>
         </div>
-        <div className="text-sm text-slate-600">{item.createdAt}</div>
+        <div className="text-sm text-slate-600">
+          {new Date(item.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </div>
 
         <div className="mt-2">
           <div className="flex justify-between text-xs text-slate-600 mb-1">
@@ -96,7 +142,7 @@ function OwnerArtworkCard({ item, onStats }){
           <Link to={`/obra/${item.id}`} className="text-indigo-600 hover:underline">
             Ver obra
           </Link>
-          {pending && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
+          {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
         </div>
 
         <div className="flex gap-2 pt-2">

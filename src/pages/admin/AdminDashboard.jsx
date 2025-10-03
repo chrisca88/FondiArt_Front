@@ -1,28 +1,52 @@
 // src/pages/admin/AdminDashboard.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { adminListArtworks } from '../../services/mockArtworks.js'
+import api from '../../utils/api.js'
 
 export default function AdminDashboard(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
 
-  const [items, setItems] = useState([])
+  const [allArtworks, setAllArtworks] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState('pending') // 'all' | 'pending' | 'approved'
+  const [filter, setFilter] = useState('Pending') // 'all' | 'Pending' | 'Approved'
 
+  // Fetch data from API when search query 'q' changes
   useEffect(()=>{
     let alive = true
     const load = async ()=>{
       setLoading(true)
-      const data = await adminListArtworks({ status: filter, q })
-      if(alive){ setItems(data); setLoading(false) }
+      try {
+        const params = new URLSearchParams()
+        if (q) params.set('q', q)
+        
+        const { data } = await api.get(`/api/v1/artworks/?${params.toString()}`)
+        if(alive){
+          setAllArtworks(data.results || [])
+        }
+      } catch (err) {
+        if(alive){
+          console.error("Error fetching artworks for admin:", err)
+          setAllArtworks([])
+          // Optionally set an error state to show in the UI
+        }
+      } finally {
+        if (alive) setLoading(false)
+      }
     }
     load()
     return ()=>{ alive = false }
-  }, [filter, q])
+  }, [q])
+
+  // Apply client-side filtering
+  const items = useMemo(() => {
+    if (filter === 'all') {
+      return allArtworks
+    }
+    return allArtworks.filter(item => item.status === filter)
+  }, [allArtworks, filter])
 
   if (user?.role !== 'admin'){
     return (
@@ -50,8 +74,8 @@ export default function AdminDashboard(){
             {/* filtros y búsqueda */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="inline-flex rounded-xl border border-slate-200 bg-white overflow-hidden">
-                <Tab label="Pendientes" active={filter==='pending'} onClick={()=>setFilter('pending')}/>
-                <Tab label="Aprobadas" active={filter==='approved'} onClick={()=>setFilter('approved')}/>
+                <Tab label="Pendientes" active={filter==='Pending'} onClick={()=>setFilter('Pending')}/>
+                <Tab label="Aprobadas" active={filter==='Approved'} onClick={()=>setFilter('Approved')}/>
                 <Tab label="Todas" active={filter==='all'} onClick={()=>setFilter('all')}/>
               </div>
               <div className="relative">
@@ -82,27 +106,52 @@ export default function AdminDashboard(){
 
         {!loading && items.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {items.map(it => (
-              <button
-                key={it.id}
-                onClick={()=>navigate(`/admin/obra/${it.id}`)}
-                className="text-left overflow-hidden rounded-3xl border border-slate-200 bg-white/70 hover:shadow transition"
-                title="Ver detalle y aprobar"
-              >
-                <img src={it.image} alt={it.title} className="aspect-[4/3] w-full object-cover"/>
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="font-bold line-clamp-1">{it.title}</div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs shrink-0
-                      ${(it.status || 'approved')==='pending' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {(it.status || 'approved')==='pending' ? 'Pendiente' : 'Aprobada'}
-                    </span>
+            {items.map(it => {
+              let imageUrl = it.image;
+              if (typeof imageUrl === 'string') {
+                const marker = 'https%3A/';
+                const index = imageUrl.indexOf(marker);
+                if (index !== -1) {
+                  imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+                } else if (!imageUrl.startsWith('http')) {
+                  imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                }
+              }
+
+              const statusConfig = {
+                pending: { text: 'Pendiente', className: 'bg-amber-100 text-amber-700', title: 'Pendiente de aprobación' },
+                approved: { text: 'Aprobado', className: 'bg-emerald-100 text-emerald-700', title: 'Aprobado' },
+                rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700', title: 'Rechazada' },
+                default: { text: it.status || 'Desconocido', className: 'bg-slate-100 text-slate-700', title: `Estado: ${it.status}` }
+              };
+              const currentStatus = statusConfig[it.status] || statusConfig.default;
+
+              return (
+                <button
+                  key={it.id}
+                  onClick={()=>navigate(`/admin/obra/${it.id}`)}
+                  className="text-left overflow-hidden rounded-3xl border border-slate-200 bg-white/70 hover:shadow transition"
+                  title="Ver detalle y aprobar"
+                >
+                  <img src={imageUrl} alt={it.title} className="aspect-[4/3] w-full object-cover"/>
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold line-clamp-1">{it.title}</div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs shrink-0 ${currentStatus.className}`}
+                        title={currentStatus.title}
+                      >
+                        {currentStatus.text}
+                      </span>
+                    </div>
+                    <div className="text-sm text-slate-600">{it.artist?.name}</div>
+                    <div className="text-xs text-slate-500">
+                      {new Date(it.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
                   </div>
-                  <div className="text-sm text-slate-600">{it.artist}</div>
-                  <div className="text-xs text-slate-500">{it.createdAt}</div>
-                </div>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
