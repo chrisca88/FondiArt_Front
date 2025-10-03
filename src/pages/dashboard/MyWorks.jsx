@@ -147,7 +147,7 @@ function OwnerArtworkCard({ item, onStats }){
 
         <div className="flex gap-2 pt-2">
           <Link
-            to={`/publicar?edit=${item.id}`}
+            to={`/publicar/${item.id}`}
             className="btn btn-outline flex-1 rounded-xl"
             title="Editar publicación"
           >

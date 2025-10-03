@@ -54,6 +54,7 @@ export default function App(){
           <Route path="/dashboard" element={<Redirector />} />
           <Route path="/comprar" element={<BuyerDashboard/>} />
           <Route path="/publicar" element={<ArtistDashboard/>} />
+          <Route path="/publicar/:id" element={<ArtistDashboard/>} />
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
           <Route path="/mercado" element={<SecondaryMarket/>} />

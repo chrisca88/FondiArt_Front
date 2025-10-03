@@ -1,14 +1,22 @@
 // src/pages/dashboard/ArtistDashboard.jsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { getArtworkById } from '../../services/mockArtworks.js' // Mantenemos para la edición
 import authService from '../../services/authService.js'
+
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const index = url.indexOf(marker)
+  if (index !== -1) {
+    return 'https://' + url.substring(index + marker.length)
+  }
+  return url
+}
 
 export default function ArtistDashboard() {
   const user = useSelector((s) => s.auth.user)
-  const [searchParams] = useSearchParams()
-  const editId = searchParams.get('edit')
+  const { id: editId } = useParams()
   const navigate = useNavigate()
 
   // --------- estado del formulario ---------
@@ -16,6 +24,8 @@ export default function ArtistDashboard() {
   const [description, setDescription] = useState('')
   const [directSale, setDirectSale] = useState(true) // Venta directa por defecto
   const [price, setPrice] = useState('') // Renombrado para claridad
+  const [fractionsTotal, setFractionsTotal] = useState('')
+  const [fractionFrom, setFractionFrom] = useState('')
 
   // galería e imágenes
   const [gallery, setGallery] = useState([''])
@@ -26,6 +36,7 @@ export default function ArtistDashboard() {
   const [loading, setLoading] = useState(!!editId)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [initialArtwork, setInitialArtwork] = useState(null)
 
   // modal de éxito
   const [successOpen, setSuccessOpen] = useState(false)
@@ -40,7 +51,6 @@ export default function ArtistDashboard() {
   // imagen principal = primer elemento de la galería
   const mainImage = useMemo(() => gallery.find(Boolean) || uFallback(0), [gallery])
 
-  // cargar datos si estamos editando (lógica mock mantenida por ahora)
   useEffect(() => {
     let alive = true
     const run = async () => {
@@ -50,16 +60,19 @@ export default function ArtistDashboard() {
       }
       setLoading(true)
       try {
-        const it = await getArtworkById(editId)
+        const { data: it } = await authService.client.get(`/artworks/${editId}/`)
         if (!alive) return
+        setInitialArtwork(it)
         setTitle(it.title || '')
         setDescription(it.description || '')
-        setDirectSale(!!it.directSale)
-        setPrice(it.directPrice ? String(it.directPrice) : '')
-        setGallery(Array.isArray(it.gallery) && it.gallery.length ? it.gallery : [it.image])
+        setDirectSale(!!it.venta_directa)
+        setPrice(String(it.price || it.price_reference || ''))
+        setFractionsTotal(it.fractions_total ? String(it.fractions_total) : '')
+        const rawGallery = Array.isArray(it.gallery) && it.gallery.length ? it.gallery : [it.image]
+        setGallery(rawGallery.map(fixImageUrl))
         setTags(new Set(it.tags || []))
       } catch (e) {
-        navigate('/publicar', { replace: true })
+        navigate('/mis-obras', { replace: true })
       } finally {
         if (alive) setLoading(false)
       }
@@ -138,37 +151,86 @@ export default function ArtistDashboard() {
     const payload = {
       title: title.trim(),
       description: description.trim(),
-      price_reference: parseFloat(price) || 0,
-      image: finalGallery[0], // La primera imagen es la principal
-      gallery: finalGallery.slice(1), // El resto va a la galería
+      image: finalGallery[0],
+      gallery: finalGallery.slice(1),
       tags: Array.from(tags),
       venta_directa: directSale,
-      estado_venta: 'publicada' // Como se indica en la API
+      estado_venta: 'publicada'
     }
 
-    // --- LOG DE DEPURACIÓN ---
-    console.log('Enviando payload a /artworks/create/:', payload)
+    if (directSale) {
+      payload.price_reference = parseFloat(price) || 0
+    } else {
+      payload.price = parseFloat(price) || 0
+      payload.fractions_total = parseInt(fractionsTotal, 10) || 0
+    }
+
+
 
     try {
-      // Por ahora, solo manejamos la creación. La edición requeriría un endpoint PUT/PATCH.
       if (editId) {
-        // Lógica de actualización (cuando el endpoint esté disponible)
-        // await authService.client.put(`/artworks/update/${editId}/`, payload)
-        // setSuccessMsg('¡La obra se actualizó correctamente!')
-        console.warn('La funcionalidad de editar aún no está conectada a la API.')
-        setError('La funcionalidad de editar no está implementada con la API.')
-        setSaving(false)
-        return
+        const payload = {}
+
+        if (title.trim() !== initialArtwork.title) {
+          payload.title = title.trim()
+        }
+        if (description.trim() !== initialArtwork.description) {
+          payload.description = description.trim()
+        }
+
+        const currentPrice = parseFloat(price) || 0
+        const initialPrice = parseFloat(initialArtwork.price || initialArtwork.price_reference || 0)
+        if (currentPrice !== initialPrice) {
+          payload.price = currentPrice
+        }
+
+        if (!directSale) {
+          const currentFractionsTotal = parseInt(fractionsTotal, 10) || 0
+          const initialFractionsTotal = parseInt(initialArtwork.fractions_total, 10) || 0
+          if (currentFractionsTotal !== initialFractionsTotal) {
+            payload.fractionsTotal = currentFractionsTotal
+          }
+        }
+
+        const finalGallery = gallery.map(g => g.trim()).filter(Boolean)
+        const initialGallery = (Array.isArray(initialArtwork.gallery) && initialArtwork.gallery.length ? initialArtwork.gallery : [initialArtwork.image]).map(fixImageUrl)
+        if (JSON.stringify(finalGallery) !== JSON.stringify(initialGallery)) {
+          payload.image = finalGallery[0]
+          payload.gallery = finalGallery.slice(1)
+        }
+
+        const initialTags = new Set(initialArtwork.tags || [])
+        if (JSON.stringify(Array.from(tags).sort()) !== JSON.stringify(Array.from(initialTags).sort())) {
+          payload.tags = Array.from(tags)
+        }
+
+        if (Object.keys(payload).length > 0) {
+          await authService.client.patch(`/artworks/${editId}/`, payload)
+          setSuccessMsg('¡La obra se actualizó correctamente!')
+        } else {
+          setSuccessMsg('No se detectaron cambios.')
+        }
+      } else {
+        const createPayload = {
+          title: title.trim(),
+          description: description.trim(),
+          image: gallery.map(g => g.trim()).filter(Boolean)[0],
+          gallery: gallery.map(g => g.trim()).filter(Boolean).slice(1),
+          tags: Array.from(tags),
+          venta_directa: directSale,
+          estado_venta: 'publicada'
+        }
+        if (directSale) {
+          createPayload.price_reference = parseFloat(price) || 0
+        } else {
+          createPayload.price = parseFloat(price) || 0
+          createPayload.fractions_total = parseInt(fractionsTotal, 10) || 0
+        }
+        await authService.client.post('/artworks/create/', createPayload)
+        setSuccessMsg('¡Obra publicada con éxito!')
       }
-
-      // Llamada a la API para crear
-      await authService.client.post('/artworks/create/', payload)
-
-      setSuccessMsg('¡Obra publicada con éxito!')
       setSuccessOpen(true)
-      // No navegamos inmediatamente para que el usuario vea el modal
     } catch (err) {
-      // --- LOG DE DEPURACIÓN MEJORADO ---
       console.error('--- DETALLE DEL ERROR DE PUBLICACIÓN ---')
       console.error('Mensaje:', err.message)
       if (err.response) {
@@ -180,7 +242,7 @@ export default function ArtistDashboard() {
       console.error('Configuración de Axios:', err.config)
       console.error('--- FIN DEL DETALLE DEL ERROR ---')
 
-      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Error al crear la obra.'
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Error al guardar la obra.'
       setError(errorMessage)
     } finally {
       setSaving(false)
@@ -259,6 +321,7 @@ export default function ArtistDashboard() {
                       <input id="price" type="number" min={0} className="input w-56" placeholder="Ej. 1500.50" value={price} onChange={(e) => setPrice(e.target.value)} required />
                     </div>
                   )}
+
                 </div>
 
                 <div className="mt-6">
