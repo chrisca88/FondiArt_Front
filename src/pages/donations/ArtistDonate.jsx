@@ -1,10 +1,9 @@
 // src/pages/donations/ArtistDonate.jsx
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
 import { getArtistProfile } from '../../services/mockArtists.js'
-import { donate } from '../../services/mockWallet.js'
 import { listByArtist as listProjects } from '../../services/mockProjects.js'
 
 // helpers
@@ -41,7 +40,7 @@ export default function ArtistDonate(){
   const [ok, setOk] = useState(false)
   const [err, setErr] = useState('')
 
-  // --- id del artista + obras desde API ---
+  // id del artista + obras desde API
   const [artistId, setArtistId] = useState(null)
   const [works, setWorks] = useState([])
   const [worksLoading, setWorksLoading] = useState(false)
@@ -96,7 +95,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  // 3) Con el artistId, pedir /users/<id>/artworks/ (¡paginado!)
+  // 3) Con el artistId, pedir /users/<id>/artworks/ (paginado)
   useEffect(()=>{
     if (!artistId) return
     let alive = true
@@ -113,7 +112,6 @@ export default function ArtistDonate(){
       .then(res=>{
         if(!alive) return
 
-        // Soporte para respuesta paginada {results: [...] } o array directo [...]
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results
                        : (Array.isArray(payload) ? payload : [])
@@ -155,16 +153,68 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [artistId])
 
+  // 4) DONAR con API real: POST /finance/donations/
   const onDonate = async ()=>{
     setErr('')
+
+    if (!user?.id) {
+      setErr('Debés iniciar sesión para donar.')
+      return
+    }
+    if (!artistId) {
+      setErr('No se pudo identificar al artista. Intentá de nuevo.')
+      return
+    }
+    if (Number(user?.id) === Number(artistId)) {
+      setErr('No podés donar a tu propia cuenta.')
+      return
+    }
+
     const v = Number(amount)
-    if (!v || v <= 0){ setErr('Ingresá un monto válido.'); return }
+    if (!Number.isFinite(v) || v < 1) {
+      setErr('El monto debe ser al menos 1.00.')
+      return
+    }
+
     setSaving(true)
     try{
-      await donate(user, slug, v)
+      const body = {
+        artist_id: Number(artistId),
+        amount: Number(v).toFixed(2), // la API espera decimal como string
+      }
+
+      const path = '/finance/donations/'
+      if (import.meta.env.DEV) {
+        const authHeader = authService.client.defaults.headers?.Authorization
+        console.log('[DONATION] REQUEST ->', {
+          url: (authService.client.defaults.baseURL || '') + path,
+          method: 'POST',
+          body,
+          headers: { Authorization: authHeader ? authHeader.slice(0, 32) + '…' : '(none)' }
+        })
+      }
+
+      const res = await authService.client.post(path, body)
+
+      if (import.meta.env.DEV) {
+        console.log('[DONATION] RESPONSE ->', res?.status, res?.data)
+      }
+
       setOk(true)
+      setAmount('') // limpiar input
     }catch(e){
-      setErr(e?.message || 'No se pudo procesar la donación.')
+      if (import.meta.env.DEV) {
+        console.error('[DONATION] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
+      }
+      // Mensaje amigable según respuestas típicas
+      const msg =
+        e?.response?.data?.message ||
+        e?.response?.data?.detail ||
+        (e?.response?.status === 404 ? 'El artista no existe o no es válido.' :
+         e?.response?.status === 400 ? 'No se pudo procesar la donación (validación o fondos).' :
+         e?.message) ||
+        'No se pudo procesar la donación.'
+      setErr(msg)
     }finally{
       setSaving(false)
     }
@@ -209,8 +259,15 @@ export default function ArtistDonate(){
                 value={amount}
                 onChange={e=>setAmount(e.target.value)}
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Se aplicará una comisión del 2% al donante (cargo adicional).
+              </p>
               {err && <div className="text-sm text-red-600 mt-2">{err}</div>}
-              <button className="btn btn-primary w-full mt-3 disabled:opacity-60" onClick={onDonate} disabled={saving || !amount}>
+              <button
+                className="btn btn-primary w-full mt-3 disabled:opacity-60"
+                onClick={onDonate}
+                disabled={saving || !amount}
+              >
                 {saving ? 'Procesando…' : 'Donar'}
               </button>
               <button className="btn btn-outline w-full mt-2" onClick={()=>navigate('/donaciones')}>Volver</button>
