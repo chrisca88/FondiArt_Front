@@ -11,7 +11,7 @@ const toApiSort = (ui) => {
   if (ui === 'newest') return 'newest'
   if (ui === 'price-asc') return 'price-asc'
   if (ui === 'price-desc') return 'price-desc'
-  return undefined // 'relevance' -> orden por defecto de queryset
+  return undefined // 'relevance' -> orden por defecto del queryset
 }
 
 /** Corrige URLs con https%3A/ incrustado */
@@ -29,6 +29,9 @@ const norm = (s) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+
+/** Redondeo a 1 decimal (manteniendo número) */
+const round1 = (n) => Math.round(Number(n || 0) * 10) / 10
 
 /** ¿Es venta directa? usa campo de API y un fallback por nulos */
 const detectDirect = (a) => {
@@ -59,7 +62,7 @@ const mapApiItemToCard = (a) => {
     fractionsLeft: Number(fractionsLeft || 0),
     image: fixImageUrl(a.image),
     tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
-    rating: Number(a.rating?.avg || 0),
+    rating: round1(a.rating?.avg), // 👈 ahora viene con 1 decimal
     createdAt: a.createdAt,
     __isDirect: isDirect,
     __estadoVenta: String(a.estado_venta || '').toLowerCase(),
@@ -164,7 +167,9 @@ export default function BuyerDashboard(){
   const metrics = useMemo(()=>{
     const total = viewItems.length
     const artists = new Set(viewItems.map(i=>i.artist)).size
-    const avg = viewItems.length ? (viewItems.reduce((a,c)=>a + Number(c.rating || 0),0)/viewItems.length).toFixed(1) : '–'
+    const avg = viewItems.length
+      ? (viewItems.reduce((a,c)=>a + Number(c.rating || 0),0)/viewItems.length).toFixed(1)
+      : '–'
     return { total, artists, avg }
   }, [viewItems])
 
