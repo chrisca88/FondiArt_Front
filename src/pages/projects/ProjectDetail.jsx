@@ -2,8 +2,25 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
+import authService from '../../services/authService.js'
 import { getById as getProjectById, addDonation } from '../../services/mockProjects.js'
 import { donate } from '../../services/mockWallet.js'
+
+/* ---------- helpers ---------- */
+const slugify = (s = '') =>
+  String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  return idx !== -1 ? 'https://' + url.substring(idx + marker.length) : url
+}
 
 export default function ProjectDetail(){
   const { id } = useParams()
@@ -18,15 +35,47 @@ export default function ProjectDetail(){
   const [okMsg, setOkMsg] = useState('')
   const [err, setErr] = useState('')
 
+  // Cargar proyecto: API real primero, mock como fallback. No redirige en error.
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    getProjectById(id).then(x=>{
-      if(!alive) return
-      setP(x); setLoading(false)
-    }).catch(()=> navigate('/donaciones', { replace:true }))
+    setErr('')
+
+    const load = async () => {
+      try {
+        // 1) Intento con API real: GET /projects/:id/
+        const { data: d } = await authService.client.get(`/projects/${id}/`)
+        if (!alive) return
+        const mapped = {
+          id: d.id,
+          cover: fixImageUrl(d.image),
+          title: d.title || '',
+          description: d.description || '',
+          goalARS: Number(d.funding_goal ?? 0),
+          raisedARS: Number(d.amount_raised ?? 0),
+          backers: Number(d.backers ?? 0),
+          artistSlug: slugify(d.artist_name || ''),
+          artistName: d.artist_name || '',
+        }
+        setP(mapped)
+      } catch (e) {
+        // 2) Fallback al mock (para ambientes sin API aún)
+        try {
+          const x = await getProjectById(id)
+          if (!alive) return
+          setP(x)
+        } catch {
+          if (!alive) return
+          setErr('No se encontró el proyecto.')
+        }
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+
+    load()
     return ()=>{ alive = false }
-  }, [id, navigate])
+  }, [id])
 
   const goal = useMemo(()=> Number(p?.goalARS || 0), [p?.goalARS])
   const raised = useMemo(()=> Number(p?.raisedARS || 0), [p?.raisedARS])
@@ -49,9 +98,9 @@ export default function ProjectDetail(){
 
     setSaving(true)
     try{
-      // 1) Descontar exactamente lo aplicado
+      // 1) Descontar exactamente lo aplicado en la wallet mock
       await donate(user, p.artistSlug, applied, p.id)
-      // 2) Sumar exactamente lo aplicado al proyecto (con tope en servicio)
+      // 2) Sumar exactamente lo aplicado al proyecto (mock)
       const next = await addDonation(p.id, applied)
       setP(next)
       setOkMsg(
@@ -69,6 +118,15 @@ export default function ProjectDetail(){
   }
 
   if (loading) return <section className="section-frame py-16"><div className="h-48 bg-slate-200/70 animate-pulse rounded-3xl"/></section>
+  if (err) return (
+    <section className="section-frame py-16">
+      <div className="card-surface p-8 text-center">
+        <h3 className="text-xl font-bold">Proyecto no encontrado</h3>
+        <p className="text-slate-600 mt-1">{err}</p>
+        <div className="mt-4"><Link to="/donaciones" className="btn btn-primary">Volver</Link></div>
+      </div>
+    </section>
+  )
   if (!p) return null
 
   const goalReached = remaining <= 0
