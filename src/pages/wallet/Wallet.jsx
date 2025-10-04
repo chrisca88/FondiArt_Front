@@ -25,6 +25,11 @@ export default function Wallet(){
   const [tokensLoading, setTokensLoading] = useState(true)
   const [tokensError, setTokensError] = useState('')
 
+  // Tenencias del usuario (nuevo endpoint)
+  const [holdings, setHoldings] = useState({})
+  const [holdingsLoading, setHoldingsLoading] = useState(true)
+  const [holdingsError, setHoldingsError] = useState('')
+
   // UI state
   const [q, setQ] = useState('')
   const [showAmounts, setShowAmounts] = useState(true)
@@ -138,13 +143,13 @@ export default function Wallet(){
         const results = Array.isArray(res?.data?.results) ? res.data.results : []
         const mapped = results.map(t => ({
           // guardamos ambos ids
-          tokenId: t.id,                 // id del token (nuevo: lo conservamos)
+          tokenId: t.id,                 // id del token (lo conservamos)
           artworkId: t.artwork_id,       // id de la obra (para navegar)
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
           image: t.artwork_image || '',
-          // el endpoint no trae qty/valueARS
+          // qty/valueARS se completan luego con holdings
           qty: null,
           valueARS: null,
         }))
@@ -160,10 +165,73 @@ export default function Wallet(){
     return ()=>{ alive = false }
   }, [])
 
-  // búsqueda + filtro < $1 (solo aplica si hay valueARS numérico)
+  // Traer tenencias del usuario: GET /finance/users/<user_id>/tokens/
+  useEffect(()=>{
+    let alive = true
+    setHoldingsLoading(true)
+    setHoldingsError('')
+    setHoldings({})
+
+    const uid = user?.id
+
+    if (IS_MOCK) {
+      setHoldingsLoading(false)
+      setHoldingsError('Sesión de demostración activa (sin backend).')
+      if (import.meta.env.DEV) console.log('[WALLET] MOCK: no se llama a /finance/users/<id>/tokens/')
+      return
+    }
+
+    if (!uid) {
+      setHoldingsLoading(false)
+      setHoldingsError('No hay usuario autenticado.')
+      if (import.meta.env.DEV) console.log('[WALLET] Sin user.id, no se puede pedir holdings.')
+      return
+    }
+
+    if (import.meta.env.DEV) console.log('[WALLET] Fetch holdings for userId=', uid)
+
+    authService.client.get(`/finance/users/${uid}/tokens/`)
+      .then(res => {
+        if(!alive) return
+        const arr = Array.isArray(res?.data) ? res.data : []
+        const map = {}
+        for (const it of arr) {
+          const tid = Number(it?.token_id)
+          const qty = Number(it?.quantity)
+          if (Number.isFinite(tid) && Number.isFinite(qty)) {
+            map[tid] = qty
+          }
+        }
+        setHoldings(map)
+        setHoldingsLoading(false)
+      })
+      .catch(err => {
+        if(!alive) return
+        setHoldingsError(err?.response?.data?.message || err.message || 'No se pudieron cargar tus tenencias.')
+        setHoldingsLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [user?.id])
+
+  // Mezclar tokens con tenencias del usuario (qty, valueARS=qty*price)
+  const tokensView = useMemo(()=>{
+    return tokens.map(t => {
+      const qty = holdings?.[t.tokenId]
+      const priceNum = Number(t.price)
+      const value = (Number.isFinite(qty) && Number.isFinite(priceNum)) ? qty * priceNum : null
+      return {
+        ...t,
+        qty: Number.isFinite(qty) ? qty : null,
+        valueARS: Number.isFinite(value) ? value : null,
+      }
+    })
+  }, [tokens, holdings])
+
+  // búsqueda + filtro < $1 (usa tokensView)
   const filtered = useMemo(()=>{
     const term = q.trim().toLowerCase()
-    let arr = tokens
+    let arr = tokensView
     if (term) {
       arr = arr.filter(it =>
         (it.symbol || '').toLowerCase().includes(term) ||
@@ -174,7 +242,7 @@ export default function Wallet(){
       arr = arr.filter(it => Number.isFinite(Number(it.valueARS)) ? Number(it.valueARS) >= 1 : true)
     }
     return arr
-  }, [q, tokens, hideSmall])
+  }, [q, tokensView, hideSmall])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -241,6 +309,13 @@ export default function Wallet(){
           </div>
         </div>
 
+        {/* Mensaje opcional por error de holdings */}
+        {!!holdingsError && !holdingsLoading && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-2">
+            {holdingsError}
+          </div>
+        )}
+
         {/* Tabla */}
         <div className="card-surface p-0 overflow-hidden">
           <div className="grid grid-cols-12 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -255,8 +330,8 @@ export default function Wallet(){
           {/* Fila de ARS */}
           <RowARS cash={cashARS} loading={cashLoading} error={cashError} masked={!showAmounts} />
 
-          {/* Tokens desde API */}
-          {tokensLoading ? (
+          {/* Tokens desde API + holdings */}
+          {(tokensLoading) ? (
             <SkeletonRows/>
           ) : tokensError ? (
             <>
