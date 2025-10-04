@@ -126,7 +126,8 @@ export default function ArtworkDetail(){
   const [rateSaving, setRateSaving] = useState(false)
   const [rateErr, setRateErr] = useState('')
   const canRate = !!user
-  const canBuy  = !!user && user.role === 'buyer'
+  // 🔁 ANTES: solo buyer podía comprar. AHORA: cualquier usuario autenticado.
+  const canBuy  = !!user
 
   // --- compra (modal)
   const [buyOpen, setBuyOpen] = useState(false)
@@ -214,7 +215,7 @@ export default function ArtworkDetail(){
     return Number(isDirect ? data.price : data.fractionFrom) || 0
   }, [data, isDirect])
 
-  // total a pagar (dejamos como antes para no romper UX/calculos locales)
+  // total a pagar
   const total = useMemo(()=>{
     if (isDirect) return unit
     return Math.round(unit * Number(qty || 0) * 100) / 100
@@ -427,9 +428,11 @@ export default function ArtworkDetail(){
                   disabled={!canBuy || (!isDirect && isAuctioned) || (isDirect && isSold)}
                   onClick={()=> setBuyOpen(true)}
                   title={
-                    isDirect
-                      ? (isSold ? 'Obra vendida' : 'Comprar obra')
-                      : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
+                    !canBuy
+                      ? 'Iniciá sesión para comprar'
+                      : isDirect
+                        ? (isSold ? 'Obra vendida' : 'Comprar obra')
+                        : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
                   }
                 >
                   {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
