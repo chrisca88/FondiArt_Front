@@ -375,7 +375,16 @@ export default function ArtistDonate(){
                       <div className="p-3">
                         <div className="font-semibold line-clamp-1">{p.title}</div>
                         <ProgressBar raised={p.raisedARS} goal={p.goalARS}/>
-                        <Link to={`/proyecto/${p.id}`} className="btn btn-outline w-full mt-2">Ver proyecto</Link>
+                        <button
+                          type="button"
+                          className="btn btn-outline w-full mt-2"
+                          onClick={() => {
+                            if (import.meta.env.DEV) console.log('[ARTIST DONATE] go project ->', p.id)
+                            navigate(`/proyecto/${p.id}`)
+                          }}
+                        >
+                          Ver proyecto
+                        </button>
                       </div>
                     </article>
                   ))}
