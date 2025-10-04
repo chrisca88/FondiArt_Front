@@ -141,10 +141,13 @@ export default function Wallet(){
       .then(res=>{
         if(!alive) return
         const results = Array.isArray(res?.data?.results) ? res.data.results : []
+        if (import.meta.env.DEV) {
+          console.log('[WALLET] GET /cuadro-tokens/ RESPONSE:', results)
+        }
         const mapped = results.map(t => ({
-          // guardamos ambos ids
-          tokenId: t.id,                 // id del token (lo conservamos)
-          artworkId: t.artwork_id,       // id de la obra (para navegar)
+          // normalizo a número para evitar mismatch con holdings[token_id]
+          tokenId: Number(t.id),          // id del token
+          artworkId: t.artwork_id,        // id de la obra (para navegar)
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
@@ -188,11 +191,26 @@ export default function Wallet(){
       return
     }
 
-    if (import.meta.env.DEV) console.log('[WALLET] Fetch holdings for userId=', uid)
+    // Debug: qué le envío al endpoint
+    const urlPath = `/finance/users/${uid}/tokens/`
+    const authHeader = authService.client.defaults.headers?.Authorization
+    if (import.meta.env.DEV) {
+      console.log('[WALLET] GET holdings REQUEST ->', {
+        url: (authService.client.defaults.baseURL || '') + urlPath,
+        method: 'GET',
+        user_id: uid,
+        headers: {
+          Authorization: authHeader ? authHeader.slice(0, 32) + '…' : '(none)',
+        }
+      })
+    }
 
-    authService.client.get(`/finance/users/${uid}/tokens/`)
+    authService.client.get(urlPath)
       .then(res => {
         if(!alive) return
+        if (import.meta.env.DEV) {
+          console.log('[WALLET] GET holdings RESPONSE status/data ->', res?.status, res?.data)
+        }
         const arr = Array.isArray(res?.data) ? res.data : []
         const map = {}
         for (const it of arr) {
@@ -207,6 +225,9 @@ export default function Wallet(){
       })
       .catch(err => {
         if(!alive) return
+        if (import.meta.env.DEV) {
+          console.error('[WALLET] GET holdings ERROR ->', err?.response?.status, err?.response?.data || err?.message)
+        }
         setHoldingsError(err?.response?.data?.message || err.message || 'No se pudieron cargar tus tenencias.')
         setHoldingsLoading(false)
       })
@@ -216,8 +237,9 @@ export default function Wallet(){
 
   // Mezclar tokens con tenencias del usuario (qty, valueARS=qty*price)
   const tokensView = useMemo(()=>{
-    return tokens.map(t => {
-      const qty = holdings?.[t.tokenId]
+    const merged = tokens.map(t => {
+      const tid = Number(t.tokenId)
+      const qty = holdings?.[tid]
       const priceNum = Number(t.price)
       const value = (Number.isFinite(qty) && Number.isFinite(priceNum)) ? qty * priceNum : null
       return {
@@ -226,6 +248,10 @@ export default function Wallet(){
         valueARS: Number.isFinite(value) ? value : null,
       }
     })
+    if (import.meta.env.DEV) {
+      console.log('[WALLET] MERGED tokensView ->', merged)
+    }
+    return merged
   }, [tokens, holdings])
 
   // búsqueda + filtro < $1 (usa tokensView)
