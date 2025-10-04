@@ -1,28 +1,83 @@
 // src/pages/donations/Donations.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listArtists } from '../../services/mockArtists.js'
+import authService from '../../services/authService.js'
+
+// helpers
+const slugify = (s = '') =>
+  String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  if (idx !== -1) return 'https://' + url.substring(idx + marker.length)
+  return url
+}
 
 export default function Donations(){
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState([])
   const [q, setQ] = useState('')
+  const [error, setError] = useState('')
   const navigate = useNavigate()
 
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    listArtists().then(a=>{
-      if(!alive) return
-      setItems(a); setLoading(false)
-    })
+    setError('')
+    setItems([])
+
+    const path = '/artists/' // baseURL ya incluye /api/v1
+    if (import.meta.env.DEV) {
+      console.log('[DONATIONS] GET', (authService.client.defaults.baseURL || '') + path)
+    }
+
+    authService.client.get(path)
+      .then(res=>{
+        if(!alive) return
+        const payload = res?.data
+        const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+        if (import.meta.env.DEV) console.log('[DONATIONS] /artists response:', results)
+
+        const mapped = results.map(a => {
+          const name = a?.name || 'Artista'
+          const slug = slugify(name || `artista-${a?.id}`)
+          const samples = Array.isArray(a?.artworks)
+            ? a.artworks.map(x => fixImageUrl(x?.image)).filter(Boolean)
+            : []
+          return {
+            id: Number(a?.id),
+            slug,
+            name,
+            avatar: a?.avatarUrl ? fixImageUrl(a.avatarUrl) : null,
+            totalWorks: samples.length,
+            samples
+          }
+        })
+
+        setItems(mapped)
+        setLoading(false)
+      })
+      .catch(err=>{
+        if(!alive) return
+        setError(err?.response?.data?.message || err.message || 'No se pudieron cargar los artistas.')
+        setLoading(false)
+        if (import.meta.env.DEV) console.error('[DONATIONS] /artists error:', err?.response?.status, err?.response?.data || err?.message)
+      })
+
     return ()=>{ alive = false }
   },[])
 
   const view = useMemo(()=>{
     const s = q.trim().toLowerCase()
     if (!s) return items
-    return items.filter(a => a.name.toLowerCase().includes(s))
+    return items.filter(a => (a.name || '').toLowerCase().includes(s))
   }, [items, q])
 
   return (
@@ -48,6 +103,12 @@ export default function Donations(){
             </div>
           </div>
         </div>
+
+        {!!error && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-2">
+            {error}
+          </div>
+        )}
 
         {/* Grid de artistas */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-12">
@@ -85,7 +146,7 @@ export default function Donations(){
 
 function Avatar({ name, src }){
   if (src) return <img src={src} alt={name} className="h-10 w-10 rounded-full object-cover" />
-  const initials = name.split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase()
+  const initials = (name || '?').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase()
   return <div className="grid h-10 w-10 place-items-center rounded-full bg-indigo-600 text-white text-xs font-bold">{initials}</div>
 }
 function SkeletonCard(){
