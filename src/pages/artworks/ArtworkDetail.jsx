@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
-import { buyFractions, buyArtworkDirect } from '../../services/mockWallet.js'
 
 // ---- helpers ----
 const slugify = (s = '') =>
@@ -60,6 +59,58 @@ const detectDirect = (a) => {
   return !!(noFraction && noTotals)
 }
 
+/* =========================
+   MOCKS DE ORDEN DE COMPRA
+   ========================= */
+const wait = (ms) => new Promise(r => setTimeout(r, ms))
+const rid = () => Math.floor(Math.random() * 900000 + 100000)
+
+const pushMockOrder = (userId, order) => {
+  try{
+    const k = userId ? `orders_${userId}` : 'orders_anon'
+    const arr = JSON.parse(localStorage.getItem(k) || '[]')
+    arr.unshift(order)
+    localStorage.setItem(k, JSON.stringify(arr))
+  }catch{}
+}
+
+const mockBuyFractions = async ({ user, artworkId, fractions, unitPrice }) => {
+  await wait(600)
+  if (!user?.id) throw new Error('Usuario no autenticado.')
+  const amount = Number(unitPrice) * Number(fractions)
+  const order = {
+    id: rid(),
+    buyerId: String(user.id),
+    artworkId: String(artworkId),
+    fractions: Number(fractions),
+    unitPrice: Number(unitPrice),
+    amount: Number(amount),
+    status: 'pending',
+    checkoutUrl: null,
+    createdAt: new Date().toISOString(),
+  }
+  pushMockOrder(user.id, order)
+  return order
+}
+
+const mockBuyDirect = async ({ user, artworkId, price }) => {
+  await wait(600)
+  if (!user?.id) throw new Error('Usuario no autenticado.')
+  const order = {
+    id: rid(),
+    buyerId: String(user.id),
+    artworkId: String(artworkId),
+    fractions: 1,
+    unitPrice: Number(price),
+    amount: Number(price),
+    status: 'pending',
+    checkoutUrl: null,
+    createdAt: new Date().toISOString(),
+  }
+  pushMockOrder(user.id, order)
+  return order
+}
+
 export default function ArtworkDetail(){
   const { id } = useParams()
   const navigate = useNavigate()
@@ -74,8 +125,8 @@ export default function ArtworkDetail(){
   const [rating, setRating] = useState({ avg: 0, count: 0, my: 0 })
   const [rateSaving, setRateSaving] = useState(false)
   const [rateErr, setRateErr] = useState('')
-  const canRate = !!user // requiere auth para POST
-  const canBuy  = !!user && user.role === 'buyer' // tu regla previa
+  const canRate = !!user
+  const canBuy  = !!user && user.role === 'buyer'
 
   // --- compra (modal)
   const [buyOpen, setBuyOpen] = useState(false)
@@ -98,7 +149,6 @@ export default function ArtworkDetail(){
         const { data: raw } = await authService.client.get(`/artworks/${id}/`)
         if (!alive) return
 
-        // map del detalle
         const isDirect = detectDirect(raw)
         const gallery = Array.isArray(raw.gallery) && raw.gallery.length
           ? raw.gallery.map(fixImageUrl)
@@ -118,7 +168,7 @@ export default function ArtworkDetail(){
           fractionsLeft: isDirect ? 1 : Number((raw.fractionsLeft ?? raw.fractionsTotal) || 0),
           createdAt: raw.createdAt,
           status: String(raw.status || '').toLowerCase(),
-          // flags derivados
+          estado_venta: String(raw.estado_venta || '').toLowerCase(),
           directSale: isDirect,
         }
         setData(mapped)
@@ -131,7 +181,6 @@ export default function ArtworkDetail(){
           const my = serverMy || cachedMy || 0
           setRating({ avg: Number(r?.avg || 0), count: Number(r?.count || 0), my })
         } catch(e) {
-          // si falla el endpoint de rating, al menos mostramos cache/my=0
           const cachedMy = user?.id ? getMyRating(user.id, raw.id) : 0
           setRating(prev => ({ ...prev, my: cachedMy }))
         }
@@ -171,9 +220,6 @@ export default function ArtworkDetail(){
     return Math.round(unit * Number(qty || 0) * 100) / 100
   }, [unit, qty, isDirect])
 
-  // --- formateo de fecha de subasta (si aplica y si algún día vuelve)
-  const auctionDateText = null // no provisto por tu serializer; dejar oculto
-
   if (loading) return <section className="section-frame py-16"><Skeleton/></section>
   if (err) return (
     <section className="section-frame py-16">
@@ -209,6 +255,52 @@ export default function ArtworkDetail(){
       setRateErr(e?.response?.data?.error || e?.message || 'No se pudo registrar tu valoración.')
     } finally {
       setRateSaving(false)
+    }
+  }
+
+  // compra mockeada
+  const handleBuy = async () => {
+    setBuying(true); setBuyErr('')
+    try {
+      // refresco rápido del estado por si cambió algo en back (solo GET)
+      const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
+      const directFresh = detectDirect(fresh)
+      const frTotal = Number(fresh.fractionsTotal ?? 0)
+      const frLeft  = Number(fresh.fractionsLeft ?? (directFresh ? 1 : 0))
+
+      if (!directFresh) {
+        // TOKENIZADA
+        const desired = Math.floor(Number(qty || 1))
+        if (!frTotal) throw new Error('La obra no tiene fracciones configuradas.')
+        if (desired < 1) throw new Error('Cantidad inválida.')
+        if (desired > frLeft) throw new Error(`Solo quedan ${frLeft} fracciones.`)
+
+        const order = await mockBuyFractions({
+          user, artworkId: data.id, fractions: desired, unitPrice: unit
+        })
+
+        setData(prev => {
+          const left = Math.max(0, Number(prev.fractionsLeft || 0) - desired)
+          const next = { ...prev, fractionsLeft: left }
+          if (left === 0) next.estado_venta = 'vendida'
+          return next
+        })
+        setBuyOk(true)
+        // (Opcional) console.log('MOCK ORDER', order)
+      } else {
+        // VENTA DIRECTA
+        const order = await mockBuyDirect({
+          user, artworkId: data.id, price: unit
+        })
+        setData(prev => ({ ...prev, status: 'sold', estado_venta: 'vendida', fractionsLeft: 0 }))
+        setBuyOk(true)
+        // (Opcional) console.log('MOCK ORDER', order)
+      }
+    } catch(e){
+      const msg = e?.message || 'No se pudo completar la compra.'
+      setBuyErr(msg)
+    } finally {
+      setBuying(false)
     }
   }
 
@@ -276,7 +368,7 @@ export default function ArtworkDetail(){
 
               <div className="divider" />
 
-              {/* Métricas: distintas según modo */}
+              {/* Métricas */}
               {isDirect ? (
                 <div className="grid grid-cols-1 gap-3 text-center">
                   <Metric label="Precio" value={`$${fmt(unit)}`} />
@@ -288,8 +380,6 @@ export default function ArtworkDetail(){
                   <Metric label="Vend." value={`${soldPct}%`} />
                 </div>
               )}
-
-              {/* (sin subasta en tu API actual) */}
 
               <div className="flex flex-wrap gap-2">
                 {data.tags.map(t => (
@@ -348,7 +438,6 @@ export default function ArtworkDetail(){
             <h3 className="text-lg font-bold">Ficha técnica</h3>
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
-              {/* 👇 fecha formateada dd-mm-aaaa */}
               <li><strong>Publicación:</strong> {formatDateDMY(data.createdAt)}</li>
               <li><strong>Rating:</strong> {Number(rating.avg || 0).toFixed(1)} ({rating.count})</li>
             </ul>
@@ -427,22 +516,7 @@ export default function ArtworkDetail(){
                     <button
                       className="btn btn-primary flex-1 disabled:opacity-60"
                       disabled={buying || (!isDirect && (!qty || qty < 1))}
-                      onClick={async ()=>{
-                        setBuying(true); setBuyErr('')
-                        try{
-                          if (isDirect) {
-                            await (buyArtworkDirect?.(user, data.id))
-                          } else {
-                            const res = await buyFractions(user, data.id, Number(qty||1))
-                            setData(prev => ({ ...prev, fractionsLeft: res?.artwork?.fractionsLeft ?? prev.fractionsLeft }))
-                          }
-                          setBuyOk(true)
-                        }catch(e){
-                          setBuyErr(e?.message || 'No se pudo completar la compra.')
-                        }finally{
-                          setBuying(false)
-                        }
-                      }}
+                      onClick={handleBuy}
                     >
                       {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
                     </button>

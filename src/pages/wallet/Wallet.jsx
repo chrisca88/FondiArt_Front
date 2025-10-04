@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { getPortfolio } from '../../services/mockWallet.js'
 import authService from '../../services/authService.js'
 import API_URL from '../../config.js'
 import { IS_MOCK } from '../../features/auth/authSlice.js'
@@ -10,9 +9,6 @@ import { IS_MOCK } from '../../features/auth/authSlice.js'
 export default function Wallet(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
-
-  const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ balanceARS: 0, cashARS: 0, items: [] })
 
   // Saldo en ARS (desde backend)
   const [cashARS, setCashARS] = useState(0)
@@ -23,6 +19,11 @@ export default function Wallet(){
   const [walletAddr, setWalletAddr] = useState(null)
   const [addrLoading, setAddrLoading] = useState(true)
   const [addrError, setAddrError] = useState('')
+
+  // Tokens desde API /cuadro-tokens/
+  const [tokens, setTokens] = useState([])
+  const [tokensLoading, setTokensLoading] = useState(true)
+  const [tokensError, setTokensError] = useState('')
 
   // UI state
   const [q, setQ] = useState('')
@@ -48,17 +49,7 @@ export default function Wallet(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(()=>{
-    let alive = true
-    setLoading(true)
-    getPortfolio(user).then(p=>{
-      if(!alive) return
-      setData(p); setLoading(false)
-    })
-    return ()=>{ alive = false }
-  }, [user])
-
-  // Traer saldo ARS del backend al montar / al cambiar user.id
+  // Traer saldo ARS del backend
   useEffect(()=>{
     let alive = true
     setCashLoading(true)
@@ -82,8 +73,6 @@ export default function Wallet(){
     authService.client.get(`finance/cuenta/`)
       .then(res=>{
         if(!alive) return
-        // ⚠️ ajustá el campo según tu API (ej: res.data.saldo)
-        console.log('Respuesta de la API para el balance:', res.data)
         setCashARS(res.data?.balance || 0)
         setCashLoading(false)
       })
@@ -96,7 +85,7 @@ export default function Wallet(){
     return ()=>{ alive = false }
   }, [user?.id])
 
-  // Traer dirección de wallet del backend al montar / al cambiar user.id
+  // Traer dirección de wallet del backend
   useEffect(()=>{
     let alive = true
     setAddrLoading(true)
@@ -136,21 +125,56 @@ export default function Wallet(){
     return ()=>{ alive = false }
   }, [user?.id])
 
-  // búsqueda + filtro < $1
+  // Traer tokens del backend: GET /cuadro-tokens/
+  useEffect(()=>{
+    let alive = true
+    setTokensLoading(true)
+    setTokensError('')
+    setTokens([])
+
+    // En modo MOCK igualmente intentamos pedir (si querés, podés cortar aquí)
+    authService.client.get('/cuadro-tokens/')
+      .then(res=>{
+        if(!alive) return
+        const results = Array.isArray(res?.data?.results) ? res.data.results : []
+        const mapped = results.map(t => ({
+          // Backend fields -> UI
+          artworkId: t.id, // asumimos que es el ID de la obra
+          symbol: t.token_symbol || '',
+          title: t.artwork_title || '',
+          price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
+          image: t.artwork_image || '',
+          // no tenemos qty/valueARS del backend en este endpoint
+          qty: null,
+          valueARS: null,
+        }))
+        setTokens(mapped)
+        setTokensLoading(false)
+      })
+      .catch(err=>{
+        if(!alive) return
+        setTokensError(err?.response?.data?.message || err.message || 'No se pudieron cargar los tokens.')
+        setTokensLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [])
+
+  // búsqueda + filtro < $1 (solo aplica si hay valueARS numérico)
   const filtered = useMemo(()=>{
     const term = q.trim().toLowerCase()
-    let arr = data.items
+    let arr = tokens
     if (term) {
       arr = arr.filter(it =>
-        it.symbol.toLowerCase().includes(term) ||
-        it.title.toLowerCase().includes(term)
+        (it.symbol || '').toLowerCase().includes(term) ||
+        (it.title || '').toLowerCase().includes(term)
       )
     }
     if (hideSmall) {
-      arr = arr.filter(it => Number(it.valueARS || 0) >= 1)
+      arr = arr.filter(it => Number.isFinite(Number(it.valueARS)) ? Number(it.valueARS) >= 1 : true)
     }
     return arr
-  }, [q, data.items, hideSmall])
+  }, [q, tokens, hideSmall])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -165,7 +189,7 @@ export default function Wallet(){
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mi wallet</h1>
               <p className="lead mt-2 max-w-2xl">Resumen de tus tenencias y saldo disponible.</p>
 
-              {/* Dirección de wallet (desde backend) */}
+              {/* Dirección de wallet */}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 {addrLoading ? (
                   <span className="text-slate-500">Obteniendo dirección…</span>
@@ -231,18 +255,26 @@ export default function Wallet(){
           {/* Fila de ARS */}
           <RowARS cash={cashARS} loading={cashLoading} error={cashError} masked={!showAmounts} />
 
-          {/* Tokens */}
-          {loading ? (
+          {/* Tokens desde API */}
+          {tokensLoading ? (
             <SkeletonRows/>
+          ) : tokensError ? (
+            <>
+              <div className="h-px bg-slate-200/60" />
+              <div className="p-6 text-center text-red-600">{tokensError}</div>
+            </>
           ) : filtered.length === 0 ? (
-            <div className="p-6 text-center text-slate-600">No hay resultados.</div>
+            <>
+              <div className="h-px bg-slate-200/60" />
+              <div className="p-6 text-center text-slate-600">No hay resultados.</div>
+            </>
           ) : (
             filtered.map((it)=>(
               <RowToken
-                key={it.artworkId}
+                key={it.artworkId ?? it.symbol}
                 item={it}
                 masked={!showAmounts}
-                onBuy={()=> navigate(`/obra/${it.artworkId}`)}
+                onBuy={()=> navigate(`/obra/${it.artworkId ?? ''}`)}
               />
             ))
           )}
@@ -283,24 +315,37 @@ function RowARS({ cash = 0, masked = false, loading, error }){
 }
 
 function RowToken({ item, masked = false, onBuy }){
+  const showQty = Number.isFinite(Number(item.qty)) ? fmt(item.qty) : '—'
+  const showAmount = Number.isFinite(Number(item.valueARS)) ? `$${fmt(item.valueARS)}` : '—'
+  const showPrice = Number.isFinite(Number(item.price)) ? `$${fmt(item.price)}` : '—'
+  const canBuy = !!item.artworkId
+
   return (
     <>
       <div className="h-px bg-slate-200/60" />
       <div className="grid grid-cols-12 items-center px-4 py-3">
         <div className="col-span-4 flex items-center gap-3">
-          <img src={item.image} alt={item.title} className="h-9 w-9 rounded-full object-cover"/>
+          {item.image ? (
+            <img src={item.image} alt={item.title} className="h-9 w-9 rounded-full object-cover"/>
+          ) : (
+            <div className="h-9 w-9 rounded-full bg-slate-200" />
+          )}
           <div>
             <div className="font-semibold text-slate-900 leading-tight">{item.symbol}</div>
             <div className="text-xs text-slate-500 line-clamp-1">{item.title}</div>
           </div>
         </div>
-        <div className="col-span-2 text-right text-slate-700">${fmt(item.price)}</div>
-        <div className="col-span-2 text-right">{masked ? '******' : fmt(item.qty)}</div>
-        <div className="col-span-2 text-right font-extrabold">{masked ? '******' : `$${fmt(item.valueARS)}`}</div>
+        <div className="col-span-2 text-right text-slate-700">{showPrice}</div>
+        <div className="col-span-2 text-right">{masked ? '******' : showQty}</div>
+        <div className="col-span-2 text-right font-extrabold">{masked ? '******' : showAmount}</div>
         <div className="col-span-2 text-right">
-          <button className="btn btn-primary btn-sm w-[110px]" onClick={onBuy} title="Ir a la obra">
-            Comprar
-          </button>
+          {canBuy ? (
+            <button className="btn btn-primary btn-sm w-[110px]" onClick={onBuy} title="Ir a la obra">
+              Comprar
+            </button>
+          ) : (
+            <span className="inline-block text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-1">—</span>
+          )}
         </div>
       </div>
     </>
