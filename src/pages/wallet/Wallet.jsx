@@ -132,19 +132,19 @@ export default function Wallet(){
     setTokensError('')
     setTokens([])
 
-    // En modo MOCK igualmente intentamos pedir (si querés, podés cortar aquí)
     authService.client.get('/cuadro-tokens/')
       .then(res=>{
         if(!alive) return
         const results = Array.isArray(res?.data?.results) ? res.data.results : []
         const mapped = results.map(t => ({
-          // Backend fields -> UI
-          artworkId: t.artwork_id, // asumimos que es el ID de la obra
+          // guardamos ambos ids
+          tokenId: t.id,                 // id del token (nuevo: lo conservamos)
+          artworkId: t.artwork_id,       // id de la obra (para navegar)
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
           image: t.artwork_image || '',
-          // no tenemos qty/valueARS del backend en este endpoint
+          // el endpoint no trae qty/valueARS
           qty: null,
           valueARS: null,
         }))
@@ -271,7 +271,7 @@ export default function Wallet(){
           ) : (
             filtered.map((it)=>(
               <RowToken
-                key={it.artworkId ?? it.symbol}
+                key={it.tokenId ?? it.artworkId ?? it.symbol}
                 item={it}
                 masked={!showAmounts}
                 onBuy={()=> navigate(`/obra/${it.artworkId ?? ''}`)}
@@ -340,7 +340,11 @@ function RowToken({ item, masked = false, onBuy }){
         <div className="col-span-2 text-right font-extrabold">{masked ? '******' : showAmount}</div>
         <div className="col-span-2 text-right">
           {canBuy ? (
-            <button className="btn btn-primary btn-sm w-[110px]" onClick={onBuy} title="Ir a la obra">
+            <button
+              className="btn btn-primary btn-sm w-[110px]"
+              onClick={onBuy}
+              title={`Ir a la obra${item.tokenId ? ` (token #${item.tokenId})` : ''}`}
+            >
               Comprar
             </button>
           ) : (
