@@ -4,7 +4,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
 import { getArtistProfile } from '../../services/mockArtists.js'
-import { listByArtist as listProjects } from '../../services/mockProjects.js'
 
 // helpers
 const slugify = (s = '') =>
@@ -31,22 +30,26 @@ export default function ArtistDonate(){
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
 
-  // proyectos (mock)
-  const [projects, setProjects] = useState([])
-
-  // donación
+  // DONACIÓN
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
   const [err, setErr] = useState('')
 
-  // id del artista + obras desde API
+  // IDs y datos reales
   const [artistId, setArtistId] = useState(null)
+
+  // OBRAS (API real)
   const [works, setWorks] = useState([])
   const [worksLoading, setWorksLoading] = useState(false)
   const [worksError, setWorksError] = useState('')
 
-  // 1) Perfil (mock) + proyectos (mock)
+  // PROYECTOS (API real)
+  const [projects, setProjects] = useState([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectsError, setProjectsError] = useState('')
+
+  /* 1) Perfil (mock) */
   useEffect(()=>{
     let alive = true
     setLoading(true)
@@ -57,12 +60,10 @@ export default function ArtistDonate(){
       setData(p); setLoading(false)
     })
 
-    listProjects(slug).then(list => { if (alive) setProjects(list) })
-
     return ()=>{ alive = false }
   }, [slug])
 
-  // 2) Resolver artistId desde /artists/ usando el mismo slugify que Donations.jsx
+  /* 2) Resolver artistId desde /artists/ usando el mismo slugify que Donations.jsx */
   useEffect(()=>{
     let alive = true
     setArtistId(null)
@@ -95,7 +96,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  // 3) Con el artistId, pedir /users/<id>/artworks/ (paginado)
+  /* 3) Con el artistId, pedir OBRAS: /users/<id>/artworks/ (soporta array o paginado) */
   useEffect(()=>{
     if (!artistId) return
     let alive = true
@@ -153,7 +154,58 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [artistId])
 
-  // 4) DONAR con API real: POST /finance/donations/
+  /* 4) Con el artistId, pedir PROYECTOS: /artists/<id>/projects/ (público) */
+  useEffect(()=>{
+    if (!artistId) return
+    let alive = true
+    setProjectsLoading(true)
+    setProjectsError('')
+    setProjects([])
+
+    const path = `/artists/${artistId}/projects/`
+    if (import.meta.env.DEV) {
+      console.log('[ARTIST DONATE] GET', (authService.client.defaults.baseURL || '') + path)
+    }
+
+    authService.client.get(path)
+      .then(res=>{
+        if(!alive) return
+        const payload = res?.data
+        const results = Array.isArray(payload?.results) ? payload.results
+                       : (Array.isArray(payload) ? payload : [])
+
+        if (import.meta.env.DEV) {
+          console.log('[ARTIST DONATE] /artists/<id>/projects RESPONSE -> status:', res?.status, 'count:', payload?.count ?? results.length)
+        }
+
+        const mapped = results.map(p => ({
+          id: Number(p?.id),
+          title: p?.title || '',
+          description: p?.description || '',
+          cover: fixImageUrl(p?.image || ''),            // backend "image" -> UI "cover"
+          goalARS: Number(p?.funding_goal ?? 0),         // string decimal -> número
+          raisedARS: Number(p?.amount_raised ?? 0),      // string decimal -> número
+          backers: Number(p?.backers ?? 0),
+          publicationDate: p?.publication_date || null,
+          artistId: Number(p?.artist ?? artistId),
+        }))
+
+        setProjects(mapped)
+        setProjectsLoading(false)
+      })
+      .catch(e=>{
+        if(!alive) return
+        setProjectsError(e?.response?.data?.message || e?.message || 'No se pudieron cargar los proyectos del artista.')
+        setProjectsLoading(false)
+        if (import.meta.env.DEV) {
+          console.error('[ARTIST DONATE] /artists/<id>/projects error:', e?.response?.status, e?.response?.data || e?.message)
+        }
+      })
+
+    return ()=>{ alive = false }
+  }, [artistId])
+
+  /* 5) DONAR con API real: POST /finance/donations/ */
   const onDonate = async ()=>{
     setErr('')
 
@@ -180,7 +232,7 @@ export default function ArtistDonate(){
     try{
       const body = {
         artist_id: Number(artistId),
-        amount: Number(v).toFixed(2), // la API espera decimal como string
+        amount: Number(v).toFixed(2), // la API espera decimal (string)
       }
 
       const path = '/finance/donations/'
@@ -195,18 +247,14 @@ export default function ArtistDonate(){
       }
 
       const res = await authService.client.post(path, body)
-
-      if (import.meta.env.DEV) {
-        console.log('[DONATION] RESPONSE ->', res?.status, res?.data)
-      }
+      if (import.meta.env.DEV) console.log('[DONATION] RESPONSE ->', res?.status, res?.data)
 
       setOk(true)
-      setAmount('') // limpiar input
+      setAmount('')
     }catch(e){
       if (import.meta.env.DEV) {
         console.error('[DONATION] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
       }
-      // Mensaje amigable según respuestas típicas
       const msg =
         e?.response?.data?.message ||
         e?.response?.data?.detail ||
@@ -274,7 +322,7 @@ export default function ArtistDonate(){
             </div>
           </div>
 
-          {/* Obras del artista (desde API) */}
+          {/* Obras del artista (API) */}
           <div className="lg:col-span-3 card-surface p-6">
             <h3 className="text-lg font-bold">Obras publicadas</h3>
 
@@ -301,16 +349,29 @@ export default function ArtistDonate(){
               </div>
             )}
 
-            {/* Proyectos del artista (mock) */}
+            {/* Proyectos del artista (API) */}
             <div className="mt-6">
               <h3 className="text-lg font-bold">Proyectos del artista</h3>
-              {projects.length === 0 ? (
+
+              {projectsLoading ? (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Array.from({length:4}).map((_,i)=>(
+                    <div key={i} className="rounded-2xl h-40 bg-slate-200/70 animate-pulse"/>
+                  ))}
+                </div>
+              ) : projectsError ? (
+                <p className="mt-2 text-red-600">{projectsError}</p>
+              ) : projects.length === 0 ? (
                 <p className="mt-2 text-slate-600">No hay proyectos publicados aún.</p>
               ) : (
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   {projects.map(p=>(
                     <article key={p.id} className="rounded-2xl ring-1 ring-slate-200 bg-white/70 overflow-hidden">
-                      <img src={p.cover} alt={p.title} className="w-full aspect-[4/3] object-cover"/>
+                      {p.cover ? (
+                        <img src={p.cover} alt={p.title} className="w-full aspect-[4/3] object-cover"/>
+                      ) : (
+                        <div className="w-full aspect-[4/3] bg-slate-100"/>
+                      )}
                       <div className="p-3">
                         <div className="font-semibold line-clamp-1">{p.title}</div>
                         <ProgressBar raised={p.raisedARS} goal={p.goalARS}/>
