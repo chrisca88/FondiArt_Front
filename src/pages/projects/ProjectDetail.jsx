@@ -1,10 +1,9 @@
 // src/pages/projects/ProjectDetail.jsx
 import { useEffect, useState, useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
-import { getById as getProjectById, addDonation } from '../../services/mockProjects.js'
-import { donate } from '../../services/mockWallet.js'
+import { getById as getProjectById } from '../../services/mockProjects.js'
 
 /* ---------- helpers ---------- */
 const slugify = (s = '') =>
@@ -25,7 +24,6 @@ const fixImageUrl = (url) => {
 export default function ProjectDetail(){
   const { id } = useParams()
   const user = useSelector(s => s.auth.user)
-  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [p, setP] = useState(null)
@@ -84,13 +82,22 @@ export default function ProjectDetail(){
   const pct = p ? Math.min(100, Math.round((raised/Math.max(1,goal))*100)) : 0
   const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
+  // Donar al proyecto con API real:
+  // POST /finance/projects/fund/  { project_id, amount }
+  // Luego refrescamos con GET /projects/:id/ para leer amount_raised actualizado.
   async function onDonate(){
     setErr('')
+
+    if (!user?.id) {
+      setErr('Debés iniciar sesión para donar.')
+      return
+    }
+
     const entered = Number(amount)
     if (!entered || entered <= 0){ setErr('Ingresá un monto válido.'); return }
 
-    // Tope: no permitir superar la meta
-    const applied = Math.min(entered, remaining)
+    // (Opcional) Evitamos superar la meta localmente. Si preferís permitirlo, remové este bloque.
+    const applied = Math.min(entered, remaining || entered)
     if (applied <= 0){
       setErr('Este proyecto ya alcanzó la meta.')
       return
@@ -98,20 +105,53 @@ export default function ProjectDetail(){
 
     setSaving(true)
     try{
-      // 1) Descontar exactamente lo aplicado en la wallet mock
-      await donate(user, p.artistSlug, applied, p.id)
-      // 2) Sumar exactamente lo aplicado al proyecto (mock)
-      const next = await addDonation(p.id, applied)
-      setP(next)
-      setOkMsg(
-        applied < entered
-          ? `¡Gracias por apoyar este proyecto! Se aplicaron $${fmt(applied)} hasta completar la meta.`
-          : `¡Gracias por apoyar este proyecto! Se descontó $${fmt(applied)} de tu wallet.`
-      )
+      // 1) Financiar con la API real
+      const body = {
+        project_id: Number(id),
+        amount: applied.toFixed(2), // la API espera decimal como string
+      }
+
+      if (import.meta.env.DEV) {
+        const authHeader = authService.client.defaults.headers?.Authorization
+        console.log('[PROJECT FUND] POST /finance/projects/fund/', {
+          body,
+          headers: { Authorization: authHeader ? authHeader.slice(0, 32) + '…' : '(none)' }
+        })
+      }
+
+      const res = await authService.client.post('/finance/projects/fund/', body)
+
+      // 2) Refrescar datos del proyecto desde el backend
+      const { data: fresh } = await authService.client.get(`/projects/${id}/`)
+      setP({
+        id: fresh.id,
+        cover: fixImageUrl(fresh.image),
+        title: fresh.title || '',
+        description: fresh.description || '',
+        goalARS: Number(fresh.funding_goal ?? 0),
+        raisedARS: Number(fresh.amount_raised ?? 0),
+        backers: Number(fresh.backers ?? 0),
+        artistSlug: slugify(fresh.artist_name || ''),
+        artistName: fresh.artist_name || '',
+      })
+
+      // 3) Mensaje de éxito
+      const serverMsg = res?.data?.message
+      setOkMsg(serverMsg || `¡Gracias por apoyar este proyecto! Se realizó un aporte de $${fmt(applied)}.`)
       setOk(true)
       setAmount('')
     }catch(e){
-      setErr(e?.message || 'No se pudo procesar la donación.')
+      if (import.meta.env.DEV) {
+        console.error('[PROJECT FUND] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
+      }
+      const msg =
+        e?.response?.data?.message ||
+        e?.response?.data?.detail ||
+        (e?.response?.status === 404 ? 'El proyecto no existe.' :
+         e?.response?.status === 400 ? 'No se pudo procesar el aporte (fondos o validación).' :
+         e?.message) ||
+        'No se pudo procesar la donación.'
+      setErr(msg)
     }finally{
       setSaving(false)
     }
@@ -180,13 +220,15 @@ export default function ProjectDetail(){
               <input
                 type="number"
                 min={0}
-                max={remaining || undefined}
                 className="input"
                 placeholder="Ej. 1000"
                 value={amount}
                 onChange={e=>setAmount(e.target.value)}
                 disabled={goalReached}
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Se aplicará una comisión del 2% al donante (cargo adicional).
+              </p>
               {err && <div className="text-sm text-red-600 mt-2">{err}</div>}
               <button
                 className="btn btn-primary w-full mt-3 disabled:opacity-60"
