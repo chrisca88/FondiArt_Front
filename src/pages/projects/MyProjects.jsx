@@ -2,12 +2,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { listByOwner, listByArtist } from '../../services/mockProjects.js'
+import authService from '../../services/authService.js'
 
 export default function MyProjects(){
   const user = useSelector(s => s.auth.user)
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState([])
+  const [error, setError] = useState('')
   const [q, setQ] = useState('')
   const navigate = useNavigate()
 
@@ -15,34 +16,61 @@ export default function MyProjects(){
     let alive = true
     async function load(){
       setLoading(true)
+      setError('')
+      setItems([])
+
+      // Necesitamos el ID del artista. Para "Mis proyectos" tomamos el user.id.
+      const artistId = user?.id
+      if (!artistId){
+        setLoading(false)
+        setError('Tenés que iniciar sesión para ver tus proyectos.')
+        return
+      }
+
+      const path = `/artists/${artistId}/projects/`
+      if (import.meta.env.DEV) {
+        console.log('[MY PROJECTS] GET', (authService.client.defaults.baseURL || '') + path)
+      }
+
       try{
-        // 1) Intento por ownerId (caso “ideal”)
-        const byOwner = await listByOwner(user?.id)
+        const res = await authService.client.get(path)
+        const payload = res?.data
+        // Soporte para array directo o paginado {results:[...]}
+        const list = Array.isArray(payload?.results) ? payload.results
+                   : (Array.isArray(payload) ? payload : [])
+        if (import.meta.env.DEV) {
+          console.log('[MY PROJECTS] response status=', res?.status, 'count=', payload?.count ?? list.length)
+        }
 
-        // 2) Fallback/merge por artista (por si el ownerId no coincide o falta)
-        const slug = slugify(user?.name || '')
-        const byArtist = slug ? await listByArtist(slug) : []
-
-        // Unir sin duplicados por id (por si coinciden)
-        const map = new Map()
-        for (const p of [...byOwner, ...byArtist]) map.set(p.id, p)
-
+        const normalized = list.map(mapProjectFromApi)
         if (!alive) return
-        setItems([...map.values()])
-      } finally {
+        setItems(normalized)
+      }catch(e){
+        if (!alive) return
+        const msg =
+          e?.response?.data?.message ||
+          e?.response?.data?.detail ||
+          (typeof e?.response?.data === 'string' ? e.response.data : '') ||
+          e?.message ||
+          'No se pudieron cargar tus proyectos.'
+        setError(msg)
+        if (import.meta.env.DEV) {
+          console.error('[MY PROJECTS] error ->', e?.response?.status, e?.response?.data || e?.message)
+        }
+      }finally{
         if (alive) setLoading(false)
       }
     }
     load()
     return ()=>{ alive = false }
-  }, [user?.id, user?.name])
+  }, [user?.id])
 
   const view = useMemo(()=>{
     const s = q.trim().toLowerCase()
     if (!s) return items
     return items.filter(p =>
-      p.title.toLowerCase().includes(s) ||
-      (p.description||'').toLowerCase().includes(s)
+      (p.title || '').toLowerCase().includes(s) ||
+      (p.description || '').toLowerCase().includes(s)
     )
   }, [items, q])
 
@@ -74,6 +102,11 @@ export default function MyProjects(){
           </div>
         </div>
 
+        {/* Mensaje de error (si corresponde) */}
+        {!!error && !loading && (
+          <div className="card-surface p-4 text-red-600">{error}</div>
+        )}
+
         {/* Grid */}
         {loading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -86,11 +119,17 @@ export default function MyProjects(){
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {view.map(p => {
-              const pct = p.goalARS > 0 ? Math.min(100, Math.round((p.raisedARS / p.goalARS) * 100)) : 0
+              const goal = Number(p.goalARS) || 0
+              const raised = Number(p.raisedARS) || 0
+              const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
               return (
                 <article key={p.id} className="card-surface overflow-hidden rounded-3xl">
                   <div className="aspect-[16/10] w-full bg-white/60 ring-1 ring-slate-200 overflow-hidden">
-                    <img src={p.cover} alt={p.title} className="w-full h-full object-cover"/>
+                    {p.cover ? (
+                      <img src={p.cover} alt={p.title} className="w-full h-full object-cover"/>
+                    ) : (
+                      <div className="w-full h-full bg-slate-100" />
+                    )}
                   </div>
                   <div className="p-5">
                     <h3 className="font-semibold leading-tight line-clamp-2">{p.title}</h3>
@@ -99,7 +138,7 @@ export default function MyProjects(){
                     <div className="mt-4">
                       <div className="flex justify-between text-xs text-slate-600">
                         <span>Recaudado</span>
-                        <span>${fmt(p.raisedARS)} / ${fmt(p.goalARS)}</span>
+                        <span>${fmt(raised)} / ${fmt(goal)}</span>
                       </div>
                       <div className="mt-1 h-2 rounded-full bg-slate-200 overflow-hidden">
                         <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
@@ -122,15 +161,33 @@ export default function MyProjects(){
   )
 }
 
+/* ---------- helpers ---------- */
 function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
 
-function slugify(s = ''){
-  return String(s)
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
+function fixImageUrl(url){
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  if (idx !== -1) return 'https://' + url.substring(idx + marker.length)
+  return url
+}
+
+function mapProjectFromApi(p = {}){
+  return {
+    id: Number(p.id),
+    title: p.title || '',
+    description: p.description || '',
+    // backend -> "image"; UI -> "cover"
+    cover: fixImageUrl(p.image || ''),
+    // backend -> "funding_goal" y "amount_raised" (strings decimales)
+    goalARS: Number(p.funding_goal ?? 0),
+    raisedARS: Number(p.amount_raised ?? 0),
+    // si el back no envía backers, mostramos 0
+    backers: Number(p.backers ?? 0),
+    // extra opcionales por si luego se usan:
+    artistId: Number(p.artist ?? 0),
+    publicationDate: p.publication_date || null,
+  }
 }
 
 function Skeleton(){
