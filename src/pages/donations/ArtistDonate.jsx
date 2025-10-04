@@ -41,7 +41,7 @@ export default function ArtistDonate(){
   const [ok, setOk] = useState(false)
   const [err, setErr] = useState('')
 
-  // --- NUEVO: id del artista + obras desde API ---
+  // --- id del artista + obras desde API ---
   const [artistId, setArtistId] = useState(null)
   const [works, setWorks] = useState([])
   const [worksLoading, setWorksLoading] = useState(false)
@@ -80,12 +80,10 @@ export default function ArtistDonate(){
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
         const found = results.find(a => slugify(a?.name || '') === slug)
         if (import.meta.env.DEV) {
-          console.log('[ARTIST DONATE] /artists response count=', results.length, 'match=', found?.id)
+          console.log('[ARTIST DONATE] /artists response count=', results.length, 'matchId=', found?.id, 'matchName=', found?.name)
         }
         if (found?.id != null) {
           setArtistId(Number(found.id))
-          // si querés, podés enriquecer datos visibles con el API real:
-          // setData(prev => prev ? prev : { name: found.name, avatar: fixImageUrl(found.avatarUrl), bio: '' })
         }
       })
       .catch(e=>{
@@ -98,7 +96,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  // 3) Con el artistId, pedir /users/<id>/artworks/
+  // 3) Con el artistId, pedir /users/<id>/artworks/ (¡paginado!)
   useEffect(()=>{
     if (!artistId) return
     let alive = true
@@ -114,12 +112,17 @@ export default function ArtistDonate(){
     authService.client.get(path)
       .then(res=>{
         if(!alive) return
-        const arr = Array.isArray(res?.data) ? res.data : []
+
+        // Soporte para respuesta paginada {results: [...] } o array directo [...]
+        const payload = res?.data
+        const results = Array.isArray(payload?.results) ? payload.results
+                       : (Array.isArray(payload) ? payload : [])
+
         if (import.meta.env.DEV) {
-          console.log('[ARTIST DONATE] /users/<id>/artworks response length=', arr.length, arr)
+          console.log('[ARTIST DONATE] /users/<id>/artworks RESPONSE -> status:', res?.status, 'count:', payload?.count ?? results.length, 'results.length:', results.length)
         }
 
-        const mapped = arr.map(w => ({
+        const mapped = results.map(w => ({
           id: Number(w?.id),
           title: w?.title || 'Obra',
           image: fixImageUrl(w?.image),
