@@ -1,10 +1,28 @@
 // src/pages/donations/ArtistDonate.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
+import authService from '../../services/authService.js'
 import { getArtistProfile } from '../../services/mockArtists.js'
 import { donate } from '../../services/mockWallet.js'
 import { listByArtist as listProjects } from '../../services/mockProjects.js'
+
+// helpers
+const slugify = (s = '') =>
+  String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+
+const fixImageUrl = (url) => {
+  if (typeof url !== 'string') return url
+  const marker = 'https%3A/'
+  const idx = url.indexOf(marker)
+  if (idx !== -1) return 'https://' + url.substring(idx + marker.length)
+  return url
+}
 
 export default function ArtistDonate(){
   const { slug } = useParams()
@@ -13,23 +31,126 @@ export default function ArtistDonate(){
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
+
+  // proyectos (mock)
   const [projects, setProjects] = useState([])
+
+  // donación
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
   const [err, setErr] = useState('')
 
+  // --- NUEVO: id del artista + obras desde API ---
+  const [artistId, setArtistId] = useState(null)
+  const [works, setWorks] = useState([])
+  const [worksLoading, setWorksLoading] = useState(false)
+  const [worksError, setWorksError] = useState('')
+
+  // 1) Perfil (mock) + proyectos (mock)
   useEffect(()=>{
     let alive = true
     setLoading(true)
+    setErr('')
+
     getArtistProfile(slug).then(p=>{
       if(!alive) return
       setData(p); setLoading(false)
     })
-    // cargar proyectos del artista
-+    listProjects(slug).then(list => { if (alive) setProjects(list) })
+
+    listProjects(slug).then(list => { if (alive) setProjects(list) })
+
     return ()=>{ alive = false }
   }, [slug])
+
+  // 2) Resolver artistId desde /artists/ usando el mismo slugify que Donations.jsx
+  useEffect(()=>{
+    let alive = true
+    setArtistId(null)
+
+    const path = '/artists/'
+    if (import.meta.env.DEV) {
+      console.log('[ARTIST DONATE] GET', (authService.client.defaults.baseURL || '') + path)
+    }
+
+    authService.client.get(path)
+      .then(res=>{
+        if(!alive) return
+        const payload = res?.data
+        const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+        const found = results.find(a => slugify(a?.name || '') === slug)
+        if (import.meta.env.DEV) {
+          console.log('[ARTIST DONATE] /artists response count=', results.length, 'match=', found?.id)
+        }
+        if (found?.id != null) {
+          setArtistId(Number(found.id))
+          // si querés, podés enriquecer datos visibles con el API real:
+          // setData(prev => prev ? prev : { name: found.name, avatar: fixImageUrl(found.avatarUrl), bio: '' })
+        }
+      })
+      .catch(e=>{
+        if(!alive) return
+        if (import.meta.env.DEV) {
+          console.error('[ARTIST DONATE] /artists error:', e?.response?.status, e?.response?.data || e?.message)
+        }
+      })
+
+    return ()=>{ alive = false }
+  }, [slug])
+
+  // 3) Con el artistId, pedir /users/<id>/artworks/
+  useEffect(()=>{
+    if (!artistId) return
+    let alive = true
+    setWorksLoading(true)
+    setWorksError('')
+    setWorks([])
+
+    const path = `/users/${artistId}/artworks/`
+    if (import.meta.env.DEV) {
+      console.log('[ARTIST DONATE] GET', (authService.client.defaults.baseURL || '') + path)
+    }
+
+    authService.client.get(path)
+      .then(res=>{
+        if(!alive) return
+        const arr = Array.isArray(res?.data) ? res.data : []
+        if (import.meta.env.DEV) {
+          console.log('[ARTIST DONATE] /users/<id>/artworks response length=', arr.length, arr)
+        }
+
+        const mapped = arr.map(w => ({
+          id: Number(w?.id),
+          title: w?.title || 'Obra',
+          image: fixImageUrl(w?.image),
+          price: Number(w?.price ?? 0),
+          fractionFrom: Number(w?.fractionFrom ?? 0),
+          fractionsTotal: Number(w?.fractionsTotal ?? 0),
+          fractionsLeft: Number(w?.fractionsLeft ?? 0),
+          status: String(w?.status || '').toLowerCase(),
+          tags: Array.isArray(w?.tags) ? w.tags : [],
+          createdAt: w?.createdAt,
+          rating: {
+            avg: Number(w?.rating?.avg ?? 0),
+            count: Number(w?.rating?.count ?? 0),
+            my: Number(w?.rating?.my ?? 0),
+          }
+        }))
+
+        setWorks(mapped)
+        setWorksLoading(false)
+      })
+      .catch(e=>{
+        if(!alive) return
+        setWorksError(e?.response?.data?.message || e?.message || 'No se pudieron cargar las obras del artista.')
+        setWorksLoading(false)
+        if (import.meta.env.DEV) {
+          console.error('[ARTIST DONATE] /users/<id>/artworks error:', e?.response?.status, e?.response?.data || e?.message)
+        }
+      })
+
+    return ()=>{ alive = false }
+  }, [artistId])
 
   const onDonate = async ()=>{
     setErr('')
@@ -93,14 +214,23 @@ export default function ArtistDonate(){
             </div>
           </div>
 
-          {/* Obras del artista */}
+          {/* Obras del artista (desde API) */}
           <div className="lg:col-span-3 card-surface p-6">
             <h3 className="text-lg font-bold">Obras publicadas</h3>
-            {data.works.length === 0 ? (
+
+            {worksLoading ? (
+              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
+                {Array.from({length:6}).map((_,i)=>(
+                  <div key={i} className="aspect-[4/3] rounded-2xl bg-slate-200/70 animate-pulse"/>
+                ))}
+              </div>
+            ) : worksError ? (
+              <p className="mt-2 text-red-600">{worksError}</p>
+            ) : works.length === 0 ? (
               <p className="mt-2 text-slate-600">Aún no hay obras publicadas por este artista.</p>
             ) : (
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
-                {data.works.slice(0, 9).map(w=>(
+                {works.slice(0, 9).map(w=>(
                   <Link key={w.id} to={`/obra/${w.id}`} className="block group">
                     <div className="aspect-[4/3] rounded-2xl overflow-hidden ring-1 ring-slate-200 bg-white/60">
                       <img src={w.image} alt={w.title} className="w-full h-full object-cover group-hover:scale-105 transition"/>
@@ -110,7 +240,8 @@ export default function ArtistDonate(){
                 ))}
               </div>
             )}
-            {/* Proyectos del artista */}
+
+            {/* Proyectos del artista (mock) */}
             <div className="mt-6">
               <h3 className="text-lg font-bold">Proyectos del artista</h3>
               {projects.length === 0 ? (
