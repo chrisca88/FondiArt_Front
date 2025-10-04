@@ -1,5 +1,5 @@
 // src/pages/artworks/ArtworkDetail.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
@@ -57,58 +57,6 @@ const detectDirect = (a) => {
   const noFraction = a?.fractionFrom == null
   const noTotals   = a?.fractionsTotal == null
   return !!(noFraction && noTotals)
-}
-
-/* =========================
-   MOCKS DE ORDEN DE COMPRA
-   ========================= */
-const wait = (ms) => new Promise(r => setTimeout(r, ms))
-const rid = () => Math.floor(Math.random() * 900000 + 100000)
-
-const pushMockOrder = (userId, order) => {
-  try{
-    const k = userId ? `orders_${userId}` : 'orders_anon'
-    const arr = JSON.parse(localStorage.getItem(k) || '[]')
-    arr.unshift(order)
-    localStorage.setItem(k, JSON.stringify(arr))
-  }catch{}
-}
-
-const mockBuyFractions = async ({ user, artworkId, fractions, unitPrice }) => {
-  await wait(600)
-  if (!user?.id) throw new Error('Usuario no autenticado.')
-  const amount = Number(unitPrice) * Number(fractions)
-  const order = {
-    id: rid(),
-    buyerId: String(user.id),
-    artworkId: String(artworkId),
-    fractions: Number(fractions),
-    unitPrice: Number(unitPrice),
-    amount: Number(amount),
-    status: 'pending',
-    checkoutUrl: null,
-    createdAt: new Date().toISOString(),
-  }
-  pushMockOrder(user.id, order)
-  return order
-}
-
-const mockBuyDirect = async ({ user, artworkId, price }) => {
-  await wait(600)
-  if (!user?.id) throw new Error('Usuario no autenticado.')
-  const order = {
-    id: rid(),
-    buyerId: String(user.id),
-    artworkId: String(artworkId),
-    fractions: 1,
-    unitPrice: Number(price),
-    amount: Number(price),
-    status: 'pending',
-    checkoutUrl: null,
-    createdAt: new Date().toISOString(),
-  }
-  pushMockOrder(user.id, order)
-  return order
 }
 
 export default function ArtworkDetail(){
@@ -214,11 +162,14 @@ export default function ArtworkDetail(){
     return Number(isDirect ? data.price : data.fractionFrom) || 0
   }, [data, isDirect])
 
-  // total a pagar
+  // total a pagar (estimado con 2% de comisión para tokenizadas)
   const total = useMemo(()=>{
+    if (!data) return 0
     if (isDirect) return unit
-    return Math.round(unit * Number(qty || 0) * 100) / 100
-  }, [unit, qty, isDirect])
+    const base = unit * Number(qty || 0)
+    const withFee = base * 1.02 // 2% (el backend vuelve a calcular)
+    return Math.round(withFee * 100) / 100
+  }, [unit, qty, isDirect, data])
 
   if (loading) return <section className="section-frame py-16"><Skeleton/></section>
   if (err) return (
@@ -258,46 +209,66 @@ export default function ArtworkDetail(){
     }
   }
 
-  // compra mockeada
+  /* ========= Cantidad: fix botones + input ========= */
+  const maxQty = Math.max(1, Number(data?.fractionsLeft || 1))
+  const clamp = useCallback((n) => {
+    const x = Math.floor(Number(n || 1))
+    if (!Number.isFinite(x)) return 1
+    return Math.min(Math.max(1, x), maxQty)
+  }, [maxQty])
+
+  const dec = () => setQty(q => clamp((Number(q)||1) - 1))
+  const inc = () => setQty(q => clamp((Number(q)||1) + 1))
+  const onQtyInput = (e) => setQty(clamp(e.currentTarget.value))
+
+  // compra real para TOKENIZADAS: POST /finance/tokens/buy/
   const handleBuy = async () => {
     setBuying(true); setBuyErr('')
     try {
-      // refresco rápido del estado por si cambió algo en back (solo GET)
+      // siempre traemos estado fresco por si cambió
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
       const directFresh = detectDirect(fresh)
-      const frTotal = Number(fresh.fractionsTotal ?? 0)
       const frLeft  = Number(fresh.fractionsLeft ?? (directFresh ? 1 : 0))
 
-      if (!directFresh) {
-        // TOKENIZADA
-        const desired = Math.floor(Number(qty || 1))
-        if (!frTotal) throw new Error('La obra no tiene fracciones configuradas.')
-        if (desired < 1) throw new Error('Cantidad inválida.')
-        if (desired > frLeft) throw new Error(`Solo quedan ${frLeft} fracciones.`)
+      if (directFresh) {
+        throw new Error('Este flujo compra tokens/fracciones. Esta obra es de venta directa.')
+      }
 
-        const order = await mockBuyFractions({
-          user, artworkId: data.id, fractions: desired, unitPrice: unit
-        })
+      const desired = clamp(qty)
+      if (frLeft <= 0) throw new Error('No hay fracciones disponibles.')
+      if (desired > frLeft) throw new Error(`Solo quedan ${frLeft} fracciones disponibles.`)
 
+      // 👉 API real
+      const payload = { artwork_id: data.id, quantity: desired }
+      await authService.client.post('/finance/tokens/buy/', payload)
+
+      // refrescar valores desde el backend (por si también resta/ajusta)
+      try {
+        const { data: again } = await authService.client.get(`/artworks/${data.id}/`)
+        setData(prev => ({
+          ...prev,
+          fractionsLeft: Number(again.fractionsLeft ?? Math.max(0, frLeft - desired)),
+          estado_venta: String(again.estado_venta || prev.estado_venta || '').toLowerCase(),
+          status: String(again.status || prev.status || '').toLowerCase(),
+        }))
+      } catch {
+        // fallback local
         setData(prev => {
           const left = Math.max(0, Number(prev.fractionsLeft || 0) - desired)
           const next = { ...prev, fractionsLeft: left }
           if (left === 0) next.estado_venta = 'vendida'
           return next
         })
-        setBuyOk(true)
-        // (Opcional) console.log('MOCK ORDER', order)
-      } else {
-        // VENTA DIRECTA
-        const order = await mockBuyDirect({
-          user, artworkId: data.id, price: unit
-        })
-        setData(prev => ({ ...prev, status: 'sold', estado_venta: 'vendida', fractionsLeft: 0 }))
-        setBuyOk(true)
-        // (Opcional) console.log('MOCK ORDER', order)
       }
+
+      setBuyOk(true)
     } catch(e){
-      const msg = e?.message || 'No se pudo completar la compra.'
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.error ||
+        (typeof e?.response?.data === 'string' ? e.response.data : '') ||
+        e?.message ||
+        'No se pudo completar la compra.'
       setBuyErr(msg)
     } finally {
       setBuying(false)
@@ -329,6 +300,7 @@ export default function ArtworkDetail(){
             <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
               {data.gallery.map((src, i)=>(
                 <button key={i} onClick={()=>setIdx(i)}
+                  type="button"
                   className={`overflow-hidden rounded-2xl ring-1 ${idx===i ? 'ring-indigo-500' : 'ring-slate-200'} bg-white/60`}>
                   <img src={src} alt={`mini ${i+1}`} className="h-20 w-28 object-cover"/>
                 </button>
@@ -411,6 +383,7 @@ export default function ArtworkDetail(){
 
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
                   className={`btn flex-1 disabled:opacity-60 ${(!isDirect && isAuctioned) || (isDirect && isSold) ? 'btn-outline' : 'btn-primary'}`}
                   disabled={!canBuy || (!isDirect && isAuctioned) || (isDirect && isSold)}
                   onClick={()=> setBuyOpen(true)}
@@ -422,7 +395,7 @@ export default function ArtworkDetail(){
                 >
                   {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
                 </button>
-                <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
+                <button type="button" className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
               </div>
             </div>
           </aside>
@@ -442,7 +415,7 @@ export default function ArtworkDetail(){
               <li><strong>Rating:</strong> {Number(rating.avg || 0).toFixed(1)} ({rating.count})</li>
             </ul>
             <div className="mt-4">
-              <button onClick={()=>navigate('/comprar')} className="btn btn-outline w-full">Volver al marketplace</button>
+              <button type="button" onClick={()=>navigate('/comprar')} className="btn btn-outline w-full">Volver al marketplace</button>
             </div>
           </div>
         </div>
@@ -455,7 +428,7 @@ export default function ArtworkDetail(){
             {/* Encabezado */}
             <div className="p-5 border-b border-slate-200/70 flex items-center justify-between">
               <h3 className="text-lg font-bold">{isDirect ? 'Comprar obra' : 'Comprar fracciones'}</h3>
-              <button className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
+              <button type="button" className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
             </div>
 
             <div className="p-5 space-y-4">
@@ -464,7 +437,9 @@ export default function ArtworkDetail(){
                   <div className="text-sm text-slate-700">
                     <div className="font-semibold">{data.title}</div>
                     {isDirect ? (
-                      <div>Precio: <strong>${fmt(unit)}</strong></div>
+                      <div className="mt-1">
+                        Este flujo compra tokens. Esta obra es de <strong>venta directa</strong>.
+                      </div>
                     ) : (
                       <>
                         <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
@@ -478,33 +453,35 @@ export default function ArtworkDetail(){
                       <label className="form-label">Cantidad</label>
                       <div className="flex items-stretch gap-2">
                         <button
-                          className="btn btn-outline"
                           type="button"
-                          onClick={()=> setQty(q => Math.max(1, Number(q||1) - 1))}
+                          className="btn btn-outline"
+                          onClick={dec}
+                          disabled={qty <= 1}
+                          title="Restar 1"
                         >−</button>
+
                         <input
                           type="number"
                           min={1}
                           max={Math.max(1, Number(data.fractionsLeft||1))}
+                          step={1}
+                          inputMode="numeric"
                           className="input flex-1 text-center"
                           value={qty}
-                          onChange={e=>{
-                            const v = Math.floor(Math.max(1, Number(e.target.value||1)))
-                            const max = Number(data.fractionsLeft||1)
-                            setQty(Math.min(v, max))
-                          }}
+                          onChange={onQtyInput}
                         />
+
                         <button
-                          className="btn btn-outline"
                           type="button"
-                          onClick={()=>{
-                            const max = Number(data.fractionsLeft||1)
-                            setQty(q => Math.min(max, Number(q||1) + 1))
-                          }}
+                          className="btn btn-outline"
+                          onClick={inc}
+                          disabled={qty >= Math.max(1, Number(data.fractionsLeft||1))}
+                          title="Sumar 1"
                         >+</button>
                       </div>
+
                       <div className="mt-2 text-sm text-slate-600">
-                        Total a pagar: <strong>${fmt(total)}</strong>
+                        Total estimado (incluye 2%): <strong>${fmt(total)}</strong>
                       </div>
                     </div>
                   )}
@@ -512,11 +489,13 @@ export default function ArtworkDetail(){
                   {buyErr && <div className="text-sm text-red-600">{buyErr}</div>}
 
                   <div className="pt-1 flex gap-2">
-                    <button className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
+                    <button type="button" className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
                     <button
+                      type="button"
                       className="btn btn-primary flex-1 disabled:opacity-60"
-                      disabled={buying || (!isDirect && (!qty || qty < 1))}
+                      disabled={buying || isDirect || (!qty || qty < 1)}
                       onClick={handleBuy}
+                      title={isDirect ? 'Este endpoint compra tokens' : 'Confirmar compra'}
                     >
                       {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
                     </button>
@@ -529,12 +508,10 @@ export default function ArtworkDetail(){
                   </div>
                   <h4 className="text-lg font-bold">¡Compra exitosa!</h4>
                   <p className="text-slate-600 text-sm">
-                    {isDirect
-                      ? <>Adquiriste la obra por <strong>${fmt(total)}</strong>.</>
-                      : <>Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''} por <strong>${fmt(total)}</strong>.</>
-                    }
+                    Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''}.<br/>
+                    (El total mostrado incluía una comisión estimada del 2%.)
                   </p>
-                  <button className="btn btn-primary w-full" onClick={()=>setBuyOpen(false)}>Aceptar</button>
+                  <button type="button" className="btn btn-primary w-full" onClick={()=>setBuyOpen(false)}>Aceptar</button>
                 </div>
               )}
             </div>
