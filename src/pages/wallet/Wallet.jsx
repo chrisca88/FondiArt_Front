@@ -145,14 +145,12 @@ export default function Wallet(){
           console.log('[WALLET] GET /cuadro-tokens/ RESPONSE:', results)
         }
         const mapped = results.map(t => ({
-          // normalizo a número para evitar mismatch con holdings[token_id]
           tokenId: Number(t.id),          // id del token
           artworkId: t.artwork_id,        // id de la obra (para navegar)
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
           image: t.artwork_image || '',
-          // qty/valueARS se completan luego con holdings
           qty: null,
           valueARS: null,
         }))
@@ -191,7 +189,6 @@ export default function Wallet(){
       return
     }
 
-    // Debug: qué le envío al endpoint
     const urlPath = `/finance/users/${uid}/tokens/`
     const authHeader = authService.client.defaults.headers?.Authorization
     if (import.meta.env.DEV) {
@@ -208,10 +205,22 @@ export default function Wallet(){
     authService.client.get(urlPath)
       .then(res => {
         if(!alive) return
+
+        // --- LOG de la respuesta cruda ----
         if (import.meta.env.DEV) {
-          console.log('[WALLET] GET holdings RESPONSE status/data ->', res?.status, res?.data)
+          console.log('[WALLET] GET holdings RAW RESPONSE ->', res?.status, res?.data)
         }
-        const arr = Array.isArray(res?.data) ? res.data : []
+
+        // Soporta respuesta paginada {results:[...]} o array directo
+        const payload = res?.data
+        const arr = Array.isArray(payload?.results)
+          ? payload.results
+          : (Array.isArray(payload) ? payload : [])
+
+        if (import.meta.env.DEV) {
+          console.log('[WALLET] holdings parsed array ->', arr)
+        }
+
         const map = {}
         for (const it of arr) {
           const tid = Number(it?.token_id)
@@ -220,6 +229,12 @@ export default function Wallet(){
             map[tid] = qty
           }
         }
+
+        if (import.meta.env.DEV) {
+          console.log('[WALLET] holdings map (token_id -> qty) ->', map)
+          console.log('[WALLET] tokens present tokenIds ->', tokens.map(t => t.tokenId))
+        }
+
         setHoldings(map)
         setHoldingsLoading(false)
       })
