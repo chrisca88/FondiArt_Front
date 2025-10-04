@@ -22,6 +22,23 @@ const fixImageUrl = (url) => {
   return url
 }
 
+// 👉 formato dd-mm-aaaa
+const formatDateDMY = (iso) => {
+  if (!iso) return '-'
+  try {
+    const d = new Date(iso)
+    if (!isNaN(d)) {
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const yyyy = d.getFullYear()
+      return `${dd}-${mm}-${yyyy}`
+    }
+  } catch {}
+  const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  return String(iso)
+}
+
 // --- cache local del "my rating" ---
 const myRatingKey = (uid, artId) => `my_rating_${uid || 'anon'}_${artId}`
 const saveMyRating = (uid, artId, value) => {
@@ -331,7 +348,8 @@ export default function ArtworkDetail(){
             <h3 className="text-lg font-bold">Ficha técnica</h3>
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
               <li><strong>Técnica:</strong> {data.tags.join(', ')}</li>
-              <li><strong>Publicación:</strong> {data.createdAt}</li>
+              {/* 👇 fecha formateada dd-mm-aaaa */}
+              <li><strong>Publicación:</strong> {formatDateDMY(data.createdAt)}</li>
               <li><strong>Rating:</strong> {Number(rating.avg || 0).toFixed(1)} ({rating.count})</li>
             </ul>
             <div className="mt-4">
