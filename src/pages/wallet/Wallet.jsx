@@ -139,7 +139,7 @@ export default function Wallet(){
         const results = Array.isArray(res?.data?.results) ? res.data.results : []
         const mapped = results.map(t => ({
           // Backend fields -> UI
-          artworkId: t.id, // asumimos que es el ID de la obra
+          artworkId: t.artwork_id, // asumimos que es el ID de la obra
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
