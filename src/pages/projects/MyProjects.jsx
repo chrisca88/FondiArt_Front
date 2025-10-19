@@ -23,7 +23,6 @@ export default function MyProjects(){
       setItems([])
       setDonorsCountById({})
 
-      // Necesitamos el ID del artista. Para "Mis proyectos" tomamos el user.id.
       const artistId = user?.id
       if (!artistId){
         setLoading(false)
@@ -39,18 +38,13 @@ export default function MyProjects(){
       try{
         const res = await authService.client.get(path)
         const payload = res?.data
-        // Soporte para array directo o paginado {results:[...]}
         const list = Array.isArray(payload?.results) ? payload.results
                    : (Array.isArray(payload) ? payload : [])
-        if (import.meta.env.DEV) {
-          console.log('[MY PROJECTS] response status=', res?.status, 'count=', payload?.count ?? list.length)
-        }
-
         const normalized = list.map(mapProjectFromApi)
         if (!alive) return
         setItems(normalized)
 
-        // === donors_count por proyecto ===
+        // Traer donors_count de cada proyecto
         try {
           const entries = await Promise.all(
             normalized.map(async (p) => {
@@ -63,15 +57,11 @@ export default function MyProjects(){
                 if (import.meta.env.DEV) {
                   console.warn('[MY PROJECTS] donors/count error for id=', p.id, e?.response?.status, e?.response?.data || e?.message)
                 }
-                // fallback: usar lo que vino de la lista
                 return [p.id, Number(p.backers || 0)]
               }
             })
           )
-          if (alive) {
-            const map = Object.fromEntries(entries)
-            setDonorsCountById(map)
-          }
+          if (alive) setDonorsCountById(Object.fromEntries(entries))
         } catch (e) {
           if (import.meta.env.DEV) console.warn('[MY PROJECTS] donors/count batch error:', e?.message)
         }
@@ -132,12 +122,10 @@ export default function MyProjects(){
           </div>
         </div>
 
-        {/* Mensaje de error (si corresponde) */}
         {!!error && !loading && (
           <div className="card-surface p-4 text-red-600">{error}</div>
         )}
 
-        {/* Grid */}
         {loading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({length:6}).map((_,i)=><Skeleton key={i}/>)}
@@ -179,15 +167,14 @@ export default function MyProjects(){
 
                     <div className="mt-4 flex gap-2">
                       <Link to={`/proyecto/${p.id}`} className="btn btn-outline flex-1">Ver</Link>
-                      {/* type="button" evita que algún form padre capture el click y no navegue */}
-                      <button
-                        type="button"
+                      {/* Usamos Link para navegar sin efectos colaterales */}
+                      <Link
+                        to={`/proyecto/${p.id}/editar`}
                         className="btn btn-primary flex-1"
-                        onClick={()=>navigate(`/proyecto/${p.id}/editar`)}
                         title="Editar proyecto"
                       >
                         Editar
-                      </button>
+                      </Link>
                     </div>
                   </div>
                 </article>
@@ -216,14 +203,10 @@ function mapProjectFromApi(p = {}){
     id: Number(p.id),
     title: p.title || '',
     description: p.description || '',
-    // backend -> "image"; UI -> "cover"
     cover: fixImageUrl(p.image || ''),
-    // backend -> "funding_goal" y "amount_raised" (strings decimales)
     goalARS: Number(p.funding_goal ?? 0),
     raisedARS: Number(p.amount_raised ?? 0),
-    // si el back no envía backers, mostramos 0 (se actualizará con donors_count)
     backers: Number(p.backers ?? 0),
-    // extra opcionales
     artistId: Number(p.artist ?? 0),
     publicationDate: p.publication_date || null,
   }
