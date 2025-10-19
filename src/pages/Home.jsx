@@ -1,15 +1,20 @@
+// src/pages/home/Home.jsx
 import { useEffect, useRef, useState } from 'react'
+import { useSelector } from 'react-redux'
 import Info from './Info.jsx'
 import FAQ from './FAQ.jsx'
 
 export default function Home(){
-  const heroImg = "https://images.unsplash.com/photo-1526318472351-c75fcf070305?q=80&w=1200&auto=format&fit=crop";
+  const heroImg = "https://images.unsplash.com/photo-1526318472351-c75fcf070305?q=80&w=1200&auto=format&fit=crop"
 
   const heroRef = useRef(null)
   const infoRef = useRef(null)
   const faqRef  = useRef(null)
 
   const [progress, setProgress] = useState({ hero:0, info:0, faq:0 })
+
+  // 🔐 usuario autenticado
+  const user = useSelector(s => s.auth.user)
 
   useEffect(()=>{
     const thresholds = Array.from({length: 21}, (_,i)=> i/20)
@@ -50,10 +55,14 @@ export default function Home(){
               <p className="mt-4 text-lg text-slate-600 max-w-xl">
                 Conectamos artistas e inversores. Comprá fracciones de obras o publicá tus obras si sos artista.
               </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <a href="/register" className="btn btn-primary">Crear cuenta</a>
-                <a href="/login" className="btn btn-outline">Iniciar sesión</a>
-              </div>
+
+              {/* Mostrar los botones SOLO si no hay usuario logueado */}
+              {!user && (
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <a href="/register" className="btn btn-primary">Crear cuenta</a>
+                  <a href="/login" className="btn btn-outline">Iniciar sesión</a>
+                </div>
+              )}
             </div>
 
             <div className="relative">
