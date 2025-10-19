@@ -12,12 +12,16 @@ export default function MyProjects(){
   const [q, setQ] = useState('')
   const navigate = useNavigate()
 
+  // donors_count por proyecto (id -> número)
+  const [donorsCountById, setDonorsCountById] = useState({})
+
   useEffect(()=>{
     let alive = true
     async function load(){
       setLoading(true)
       setError('')
       setItems([])
+      setDonorsCountById({})
 
       // Necesitamos el ID del artista. Para "Mis proyectos" tomamos el user.id.
       const artistId = user?.id
@@ -45,6 +49,32 @@ export default function MyProjects(){
         const normalized = list.map(mapProjectFromApi)
         if (!alive) return
         setItems(normalized)
+
+        // === donors_count por proyecto ===
+        try {
+          const entries = await Promise.all(
+            normalized.map(async (p) => {
+              try {
+                const ep = `/finance/projects/${p.id}/donors/count/`
+                const r = await authService.client.get(ep)
+                const count = Number(r?.data?.donors_count ?? r?.data?.count ?? 0)
+                return [p.id, count]
+              } catch (e) {
+                if (import.meta.env.DEV) {
+                  console.warn('[MY PROJECTS] donors/count error for id=', p.id, e?.response?.status, e?.response?.data || e?.message)
+                }
+                // fallback: usar lo que vino de la lista
+                return [p.id, Number(p.backers || 0)]
+              }
+            })
+          )
+          if (alive) {
+            const map = Object.fromEntries(entries)
+            setDonorsCountById(map)
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('[MY PROJECTS] donors/count batch error:', e?.message)
+        }
       }catch(e){
         if (!alive) return
         const msg =
@@ -122,6 +152,7 @@ export default function MyProjects(){
               const goal = Number(p.goalARS) || 0
               const raised = Number(p.raisedARS) || 0
               const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
+              const donors = donorsCountById[p.id] ?? Number(p.backers || 0)
               return (
                 <article key={p.id} className="card-surface overflow-hidden rounded-3xl">
                   <div className="aspect-[16/10] w-full bg-white/60 ring-1 ring-slate-200 overflow-hidden">
@@ -143,7 +174,7 @@ export default function MyProjects(){
                       <div className="mt-1 h-2 rounded-full bg-slate-200 overflow-hidden">
                         <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">{pct}% • {p.backers} aportantes</div>
+                      <div className="mt-1 text-xs text-slate-500">{pct}% • {donors} aportantes</div>
                     </div>
 
                     <div className="mt-4 flex gap-2">
@@ -182,9 +213,9 @@ function mapProjectFromApi(p = {}){
     // backend -> "funding_goal" y "amount_raised" (strings decimales)
     goalARS: Number(p.funding_goal ?? 0),
     raisedARS: Number(p.amount_raised ?? 0),
-    // si el back no envía backers, mostramos 0
+    // si el back no envía backers, mostramos 0 (se actualizará con donors_count)
     backers: Number(p.backers ?? 0),
-    // extra opcionales por si luego se usan:
+    // extra opcionales
     artistId: Number(p.artist ?? 0),
     publicationDate: p.publication_date || null,
   }
