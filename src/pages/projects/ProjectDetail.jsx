@@ -1,6 +1,6 @@
 // src/pages/projects/ProjectDetail.jsx
 import { useEffect, useState, useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
 import { getById as getProjectById } from '../../services/mockProjects.js'
@@ -23,15 +23,22 @@ const fixImageUrl = (url) => {
 
 export default function ProjectDetail(){
   const { id } = useParams()
+  const navigate = useNavigate()
   const user = useSelector(s => s.auth.user)
 
   const [loading, setLoading] = useState(true)
   const [p, setP] = useState(null)
+
   const [amount, setAmount] = useState('')
+
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
   const [okMsg, setOkMsg] = useState('')
   const [err, setErr] = useState('')
+
+  // stats del usuario en este proyecto
+  const [myCount, setMyCount] = useState(0)
+  const [myTotal, setMyTotal] = useState(0)
 
   // Cargar proyecto: API real primero, mock como fallback. No redirige en error.
   useEffect(()=>{
@@ -75,6 +82,33 @@ export default function ProjectDetail(){
     return ()=>{ alive = false }
   }, [id])
 
+  // Intentar traer estadísticas personales de donaciones para este proyecto
+  useEffect(()=>{
+    let alive = true
+    const fetchMyStats = async () => {
+      if (!user?.id) { setMyCount(0); setMyTotal(0); return }
+      try {
+        // Se asume que el backend permite filtrar por proyecto y usuario autenticado
+        // Ej: /api/v1/finance/donations/project/?project=:id&mine=1
+        const { data } = await authService.client.get(`/finance/donations/project/`, {
+          params: { project: Number(id), mine: 1 }
+        })
+        const list = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : [])
+        const sum = list.reduce((acc, it) => acc + Number(it?.amount || it?.monto || 0), 0)
+        if (!alive) return
+        setMyCount(list.length)
+        setMyTotal(sum)
+      } catch {
+        // Si el endpoint de listado no existe, dejamos 0 y luego actualizamos localmente tras donar
+        if (!alive) return
+        setMyCount(0)
+        setMyTotal(0)
+      }
+    }
+    fetchMyStats()
+    return ()=>{ alive = false }
+  }, [id, user?.id])
+
   const goal = useMemo(()=> Number(p?.goalARS || 0), [p?.goalARS])
   const raised = useMemo(()=> Number(p?.raisedARS || 0), [p?.raisedARS])
   const remaining = useMemo(()=> Math.max(0, goal - raised), [goal, raised])
@@ -82,8 +116,8 @@ export default function ProjectDetail(){
   const pct = p ? Math.min(100, Math.round((raised/Math.max(1,goal))*100)) : 0
   const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
-  // Donar al proyecto con API real:
-  // POST /finance/projects/fund/  { project_id, amount }
+  // Donar al proyecto con API real (nuevo endpoint):
+  // POST /api/v1/finance/donations/project/  { project, amount }
   // Luego refrescamos con GET /projects/:id/ para leer amount_raised actualizado.
   async function onDonate(){
     setErr('')
@@ -105,21 +139,21 @@ export default function ProjectDetail(){
 
     setSaving(true)
     try{
-      // 1) Financiar con la API real
+      // 1) Financiar con el NUEVO endpoint
       const body = {
-        project_id: Number(id),
+        project: Number(id),
         amount: applied.toFixed(2), // la API espera decimal como string
       }
 
       if (import.meta.env.DEV) {
         const authHeader = authService.client.defaults.headers?.Authorization
-        console.log('[PROJECT FUND] POST /finance/projects/fund/', {
+        console.log('[DONATION] POST /finance/donations/project/', {
           body,
           headers: { Authorization: authHeader ? authHeader.slice(0, 32) + '…' : '(none)' }
         })
       }
 
-      const res = await authService.client.post('/finance/projects/fund/', body)
+      const res = await authService.client.post('/finance/donations/project/', body)
 
       // 2) Refrescar datos del proyecto desde el backend
       const { data: fresh } = await authService.client.get(`/projects/${id}/`)
@@ -135,14 +169,21 @@ export default function ProjectDetail(){
         artistName: fresh.artist_name || '',
       })
 
-      // 3) Mostrar modal de agradecimiento
+      // 3) Actualizar mis stats localmente por si el GET no existe
+      setMyCount(c => c + 1)
+      setMyTotal(t => t + applied)
+
+      // 4) Mostrar modal de agradecimiento (ES + $)
       const serverMsg = res?.data?.message
-      setOkMsg(serverMsg || `¡Gracias por apoyar este proyecto! Se realizó un aporte de $${fmt(applied)}.`)
+      setOkMsg(
+        serverMsg ||
+        `Se acreditó tu aporte de $${fmt(applied)} al proyecto “${fresh?.title || p?.title || ''}”. ¡Gracias por apoyar!`
+      )
       setOk(true)
       setAmount('')
     }catch(e){
       if (import.meta.env.DEV) {
-        console.error('[PROJECT FUND] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
+        console.error('[DONATION] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
       }
       const msg =
         e?.response?.data?.message ||
@@ -158,7 +199,7 @@ export default function ProjectDetail(){
   }
 
   if (loading) return <section className="section-frame py-16"><div className="h-48 bg-slate-200/70 animate-pulse rounded-3xl"/></section>
-  if (err) return (
+  if (err && !p) return (
     <section className="section-frame py-16">
       <div className="card-surface p-8 text-center">
         <h3 className="text-xl font-bold">Proyecto no encontrado</h3>
@@ -203,7 +244,12 @@ export default function ProjectDetail(){
               <div className="mt-1 text-sm text-slate-600">
                 Recaudado <span className="font-semibold">${fmt(raised)}</span> de ${fmt(goal)} — {pct}%.
               </div>
-              <div className="text-xs text-slate-500">{p.backers} aportes</div>
+
+              {/* Tus estadísticas personales */}
+              <div className="text-xs text-slate-500 mt-1">
+                Tus aportes: <strong>{myCount}</strong> · Total donado: <strong>${fmt(myTotal)}</strong>
+              </div>
+
               {goalReached ? (
                 <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
                   ¡Meta alcanzada! Gracias por tu apoyo.
@@ -247,7 +293,7 @@ export default function ProjectDetail(){
       {ok && (
         <SuccessModal
           message={okMsg || '¡Gracias por apoyar este proyecto!'}
-          onClose={()=> setOk(false)}
+          onClose={() => navigate(`/donaciones/artista/${p.artistSlug}`)}
         />
       )}
     </section>
