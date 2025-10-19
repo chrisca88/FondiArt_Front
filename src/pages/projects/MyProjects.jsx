@@ -40,11 +40,15 @@ export default function MyProjects(){
         const payload = res?.data
         const list = Array.isArray(payload?.results) ? payload.results
                    : (Array.isArray(payload) ? payload : [])
+        if (import.meta.env.DEV) {
+          console.log('[MY PROJECTS] response status=', res?.status, 'count=', payload?.count ?? list.length)
+        }
+
         const normalized = list.map(mapProjectFromApi)
         if (!alive) return
         setItems(normalized)
 
-        // Traer donors_count de cada proyecto
+        // donors_count por proyecto
         try {
           const entries = await Promise.all(
             normalized.map(async (p) => {
@@ -167,14 +171,14 @@ export default function MyProjects(){
 
                     <div className="mt-4 flex gap-2">
                       <Link to={`/proyecto/${p.id}`} className="btn btn-outline flex-1">Ver</Link>
-                      {/* Usamos Link para navegar sin efectos colaterales */}
-                      <Link
-                        to={`/proyecto/${p.id}/editar`}
+                      <button
+                        type="button"
                         className="btn btn-primary flex-1"
+                        onClick={()=>navigate(`/proyecto/${p.id}/editar`)}
                         title="Editar proyecto"
                       >
                         Editar
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 </article>
