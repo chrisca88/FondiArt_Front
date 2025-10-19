@@ -34,6 +34,7 @@ export default function ArtistDonate(){
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [ok, setOk] = useState(false)
+  const [okMsg, setOkMsg] = useState('')
   const [err, setErr] = useState('')
 
   // IDs y datos reales
@@ -48,6 +49,8 @@ export default function ArtistDonate(){
   const [projects, setProjects] = useState([])
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [projectsError, setProjectsError] = useState('')
+
+  const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
   /* 1) Perfil (mock) */
   useEffect(()=>{
@@ -205,7 +208,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [artistId])
 
-  /* 5) DONAR con API real: POST /finance/donations/ */
+  /* 5) DONAR con API real: POST /finance/donations/artist/ */
   const onDonate = async ()=>{
     setErr('')
 
@@ -223,22 +226,22 @@ export default function ArtistDonate(){
     }
 
     const v = Number(amount)
-    if (!Number.isFinite(v) || v < 1) {
-      setErr('El monto debe ser al menos 1.00.')
+    if (!Number.isFinite(v) || v < 0.01) {
+      setErr('El monto debe ser al menos 0,01.')
       return
     }
 
     setSaving(true)
     try{
       const body = {
-        artist_id: Number(artistId),
-        amount: Number(v).toFixed(2), // la API espera decimal (string)
+        artist: Number(artistId),          // <- clave correcta que espera el backend
+        amount: Number(v).toFixed(2),      // <- string decimal con 2 dígitos
       }
 
-      const path = '/finance/donations/'
+      const path = '/finance/donations/artist/'
       if (import.meta.env.DEV) {
         const authHeader = authService.client.defaults.headers?.Authorization
-        console.log('[DONATION] REQUEST ->', {
+        console.log('[DONATION ARTIST] REQUEST ->', {
           url: (authService.client.defaults.baseURL || '') + path,
           method: 'POST',
           body,
@@ -247,19 +250,21 @@ export default function ArtistDonate(){
       }
 
       const res = await authService.client.post(path, body)
-      if (import.meta.env.DEV) console.log('[DONATION] RESPONSE ->', res?.status, res?.data)
+      if (import.meta.env.DEV) console.log('[DONATION ARTIST] RESPONSE ->', res?.status, res?.data)
 
+      setOkMsg(`¡Gracias por tu donación de $${fmt(v)}!`)
       setOk(true)
       setAmount('')
     }catch(e){
       if (import.meta.env.DEV) {
-        console.error('[DONATION] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
+        console.error('[DONATION ARTIST] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
       }
       const msg =
         e?.response?.data?.message ||
         e?.response?.data?.detail ||
-        (e?.response?.status === 404 ? 'El artista no existe o no es válido.' :
-         e?.response?.status === 400 ? 'No se pudo procesar la donación (validación o fondos).' :
+        (e?.response?.status === 402 ? 'Saldo insuficiente en la wallet.' :
+         e?.response?.status === 404 ? 'El artista no existe o no es válido.' :
+         e?.response?.status === 400 ? 'No se pudo procesar la donación (validación).' :
          e?.message) ||
         'No se pudo procesar la donación.'
       setErr(msg)
@@ -303,7 +308,8 @@ export default function ArtistDonate(){
                 type="number"
                 className="input"
                 placeholder="Ej. 1000"
-                min={0}
+                min={0.01}
+                step="0.01"
                 value={amount}
                 onChange={e=>setAmount(e.target.value)}
               />
@@ -398,7 +404,7 @@ export default function ArtistDonate(){
       {/* Modal éxito */}
       {ok && (
         <SuccessModal
-          message="¡Gracias por tu donación! Se descontó el saldo de tu wallet."
+          message={okMsg || '¡Gracias por tu donación! Se descontó el saldo de tu wallet.'}
           onClose={()=>{ setOk(false); }}
         />
       )}
