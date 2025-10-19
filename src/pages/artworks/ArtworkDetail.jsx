@@ -183,10 +183,28 @@ export default function ArtworkDetail(){
           ? rawGallery.map(fixImageUrl)
           : [fixImageUrl(rawImage)].filter(Boolean)
 
+        // ----- ARTISTA: string u objeto -----
+        let artistName = ''
+        const artistVal = coalesce(raw, ['artist', 'artist_name', 'artistName', 'author', 'author_name'])
+        if (typeof artistVal === 'string') {
+          artistName = artistVal
+        } else if (artistVal && typeof artistVal === 'object') {
+          artistName =
+            artistVal.name ||
+            [artistVal.first_name || artistVal.firstName, artistVal.last_name || artistVal.lastName]
+              .filter(Boolean).join(' ') ||
+            artistVal.username ||
+            artistVal.alias ||
+            ''
+        } else {
+          artistName = ''
+        }
+        artistName = String(artistName).trim()
+
         const mapped = {
           id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
           title: coalesce(raw, ['title', 'titulo']) ?? '',
-          artist: (coalesce(raw, ['artist?.name', 'artist_name', 'artist']) ?? '').toString().trim(),
+          artist: artistName,
           image: fixImageUrl(rawImage),
           gallery,
           description: coalesce(raw, ['description', 'descripcion']) ?? '',
@@ -414,7 +432,7 @@ export default function ArtworkDetail(){
                   className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold ring-1 ring-transparent hover:ring-indigo-400 transition"
                   title="Ver perfil del artista"
                 >
-                  {data.artist.split(' ').map(s=>s[0]).slice(0,2).join('')}
+                  {String(data.artist).split(' ').map(s=>s[0]).slice(0,2).join('')}
                 </Link>
                 <div>
                   <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
@@ -422,7 +440,7 @@ export default function ArtworkDetail(){
                     to={`/donaciones/artista/${artistSlug}`}
                     className="text-slate-600 hover:text-indigo-600 hover:underline"
                   >
-                    {data.artist}
+                    {data.artist || '—'}
                   </Link>
                   <div className="mt-1 flex items-center gap-1 text-amber-500">
                     <Star className="h-4 w-4"/>
