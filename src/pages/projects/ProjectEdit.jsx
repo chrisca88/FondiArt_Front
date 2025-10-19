@@ -12,11 +12,11 @@ export default function ProjectEdit(){
   const [error, setError] = useState('')
   const [ok, setOk] = useState(false)
 
+  // Solo campos editables: título, descripción, imagen (cover)
   const [form, setForm] = useState({
     title: '',
     description: '',
     cover: '',
-    goalARS: '',
   })
 
   useEffect(()=>{
@@ -28,7 +28,6 @@ export default function ProjectEdit(){
         title: p.title || '',
         description: p.description || '',
         cover: p.cover || '',
-        goalARS: p.goalARS ?? '',
       })
       setLoading(false)
     }).catch(()=>{
@@ -51,7 +50,7 @@ export default function ProjectEdit(){
         title: form.title?.trim(),
         description: form.description?.trim(),
         cover: form.cover?.trim(),
-        goalARS: Number(form.goalARS) || 0,
+        // ❌ NO actualizamos la meta (goal) desde esta pantalla
       })
       setOk(true)
       setTimeout(()=> navigate('/mis-proyectos', { replace:true }), 1200)
@@ -70,7 +69,7 @@ export default function ProjectEdit(){
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
           <p className="eyebrow">Proyectos</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Editar proyecto</h1>
-          <p className="lead mt-2 max-w-2xl">Actualizá la información visible en la página del proyecto.</p>
+          <p className="lead mt-2 max-w-2xl">Actualizá título, descripción o imagen del proyecto.</p>
         </div>
 
         <form onSubmit={onSubmit} className="card-surface p-6 sm:p-8 max-w-3xl space-y-5">
@@ -87,7 +86,7 @@ export default function ProjectEdit(){
           </div>
 
           <div>
-            <label className="form-label" htmlFor="cover">URL de portada</label>
+            <label className="form-label" htmlFor="cover">URL de portada (imagen)</label>
             <input id="cover" name="cover" className="input" placeholder="https://…" value={form.cover} onChange={onChange}/>
             {form.cover && (
               <div className="mt-3 rounded-2xl overflow-hidden ring-1 ring-slate-200 bg-white/60">
@@ -96,9 +95,9 @@ export default function ProjectEdit(){
             )}
           </div>
 
-          <div>
-            <label className="form-label" htmlFor="goalARS">Meta de recaudación (ARS)</label>
-            <input id="goalARS" name="goalARS" type="number" className="input" value={form.goalARS} onChange={onChange}/>
+          {/* Nota aclaratoria: la meta no es editable aquí */}
+          <div className="text-xs text-slate-500">
+            * La meta de recaudación no puede modificarse desde esta pantalla.
           </div>
 
           <div className="pt-2 flex gap-3">

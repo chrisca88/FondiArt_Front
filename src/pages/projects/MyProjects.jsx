@@ -179,7 +179,15 @@ export default function MyProjects(){
 
                     <div className="mt-4 flex gap-2">
                       <Link to={`/proyecto/${p.id}`} className="btn btn-outline flex-1">Ver</Link>
-                      <button className="btn btn-primary flex-1" onClick={()=>navigate(`/proyecto/${p.id}/editar`)}>Editar</button>
+                      {/* type="button" evita que algún form padre capture el click y no navegue */}
+                      <button
+                        type="button"
+                        className="btn btn-primary flex-1"
+                        onClick={()=>navigate(`/proyecto/${p.id}/editar`)}
+                        title="Editar proyecto"
+                      >
+                        Editar
+                      </button>
                     </div>
                   </div>
                 </article>
