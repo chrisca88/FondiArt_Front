@@ -66,7 +66,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  /* 2) Resolver artistId desde /artists/ usando el mismo slugify que Donations.jsx */
+  /* 2) Resolver artistId desde /artists/ usando el mismo slugify */
   useEffect(()=>{
     let alive = true
     setArtistId(null)
@@ -99,7 +99,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  /* 3) Con el artistId, pedir OBRAS: /users/<id>/artworks/ (soporta array o paginado) */
+  /* 3) Con el artistId, pedir OBRAS: /users/<id>/artworks/ */
   useEffect(()=>{
     if (!artistId) return
     let alive = true
@@ -157,7 +157,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [artistId])
 
-  /* 4) Con el artistId, pedir PROYECTOS: /artists/<id>/projects/ (público) */
+  /* 4) Con el artistId, pedir PROYECTOS: /artists/<id>/projects/ */
   useEffect(()=>{
     if (!artistId) return
     let alive = true
@@ -185,9 +185,9 @@ export default function ArtistDonate(){
           id: Number(p?.id),
           title: p?.title || '',
           description: p?.description || '',
-          cover: fixImageUrl(p?.image || ''),            // backend "image" -> UI "cover"
-          goalARS: Number(p?.funding_goal ?? 0),         // string decimal -> número
-          raisedARS: Number(p?.amount_raised ?? 0),      // string decimal -> número
+          cover: fixImageUrl(p?.image || ''),
+          goalARS: Number(p?.funding_goal ?? 0),
+          raisedARS: Number(p?.amount_raised ?? 0),
           backers: Number(p?.backers ?? 0),
           publicationDate: p?.publication_date || null,
           artistId: Number(p?.artist ?? artistId),
@@ -208,7 +208,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [artistId])
 
-  /* 5) DONAR con API real: POST /finance/donations/artist/ */
+  /* 5) DONAR con API real: POST /finance/donations/ */
   const onDonate = async ()=>{
     setErr('')
 
@@ -234,14 +234,14 @@ export default function ArtistDonate(){
     setSaving(true)
     try{
       const body = {
-        artist: Number(artistId),          // <- clave correcta que espera el backend
+        artist_id: Number(artistId),       // <- clave exacta del backend
         amount: Number(v).toFixed(2),      // <- string decimal con 2 dígitos
       }
 
-      const path = '/finance/donations/artist/'
+      const path = '/finance/donations/'
       if (import.meta.env.DEV) {
         const authHeader = authService.client.defaults.headers?.Authorization
-        console.log('[DONATION ARTIST] REQUEST ->', {
+        console.log('[DONATION] REQUEST ->', {
           url: (authService.client.defaults.baseURL || '') + path,
           method: 'POST',
           body,
@@ -250,14 +250,14 @@ export default function ArtistDonate(){
       }
 
       const res = await authService.client.post(path, body)
-      if (import.meta.env.DEV) console.log('[DONATION ARTIST] RESPONSE ->', res?.status, res?.data)
+      if (import.meta.env.DEV) console.log('[DONATION] RESPONSE ->', res?.status, res?.data)
 
       setOkMsg(`¡Gracias por tu donación de $${fmt(v)}!`)
       setOk(true)
       setAmount('')
     }catch(e){
       if (import.meta.env.DEV) {
-        console.error('[DONATION ARTIST] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
+        console.error('[DONATION] ERROR ->', e?.response?.status, e?.response?.data || e?.message)
       }
       const msg =
         e?.response?.data?.message ||
@@ -438,13 +438,13 @@ function SuccessModal({ message, onClose }){
 
 function ProgressBar({ raised=0, goal=0 }){
   const pct = Math.min(100, Math.round((Number(raised)/Math.max(1,Number(goal)))*100))
-  const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
+  const fmtNum = (n)=> Number(n||0).toLocaleString('es-AR')
   return (
     <div className="mt-2">
       <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
         <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }}/>
       </div>
-      <div className="mt-1 text-xs text-slate-600">Recaudado ${fmt(raised)} de ${fmt(goal)} • {pct}%</div>
+      <div className="mt-1 text-xs text-slate-600">Recaudado ${fmtNum(raised)} de ${fmtNum(goal)} • {pct}%</div>
     </div>
   )
 }
