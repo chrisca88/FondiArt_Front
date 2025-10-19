@@ -36,9 +36,33 @@ export default function ProjectDetail(){
   const [okMsg, setOkMsg] = useState('')
   const [err, setErr] = useState('')
 
-  // stats del usuario en este proyecto
+  // stats del usuario en este proyecto (summary)
   const [myCount, setMyCount] = useState(0)
   const [myTotal, setMyTotal] = useState(0)
+
+  const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
+
+  // ---- helpers API ----
+  const fetchSummary = async (projectId, userId) => {
+    // GET /finance/projects/:projectId/donations/summary/:userId/
+    // Respuesta esperada: { total_donated: "150.00", donation_count: 2 }
+    try{
+      const { data } = await authService.client.get(
+        `/finance/projects/${projectId}/donations/summary/${userId}/`
+      )
+      const total = Number(data?.total_donated ?? 0)
+      const count = Number(data?.donation_count ?? 0)
+      setMyTotal(total)
+      setMyCount(count)
+    }catch(e){
+      // Si falla, dejamos los datos en 0 (no bloquea la UI)
+      setMyTotal(0)
+      setMyCount(0)
+      if (import.meta.env.DEV) {
+        console.warn('[SUMMARY] error ->', e?.response?.status, e?.response?.data || e?.message)
+      }
+    }
+  }
 
   // Cargar proyecto: API real primero, mock como fallback. No redirige en error.
   useEffect(()=>{
@@ -82,31 +106,14 @@ export default function ProjectDetail(){
     return ()=>{ alive = false }
   }, [id])
 
-  // Intentar traer estadísticas personales de donaciones para este proyecto
+  // Traer el summary al cargar la página (si hay usuario autenticado)
   useEffect(()=>{
-    let alive = true
-    const fetchMyStats = async () => {
-      if (!user?.id) { setMyCount(0); setMyTotal(0); return }
-      try {
-        // Se asume que el backend permite filtrar por proyecto y usuario autenticado
-        // Ej: /api/v1/finance/donations/project/?project=:id&mine=1
-        const { data } = await authService.client.get(`/finance/donations/project/`, {
-          params: { project: Number(id), mine: 1 }
-        })
-        const list = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : [])
-        const sum = list.reduce((acc, it) => acc + Number(it?.amount || it?.monto || 0), 0)
-        if (!alive) return
-        setMyCount(list.length)
-        setMyTotal(sum)
-      } catch {
-        // Si el endpoint de listado no existe, dejamos 0 y luego actualizamos localmente tras donar
-        if (!alive) return
-        setMyCount(0)
-        setMyTotal(0)
-      }
+    if (user?.id && id) {
+      fetchSummary(Number(id), Number(user.id))
+    } else {
+      setMyCount(0); setMyTotal(0)
     }
-    fetchMyStats()
-    return ()=>{ alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user?.id])
 
   const goal = useMemo(()=> Number(p?.goalARS || 0), [p?.goalARS])
@@ -114,11 +121,10 @@ export default function ProjectDetail(){
   const remaining = useMemo(()=> Math.max(0, goal - raised), [goal, raised])
 
   const pct = p ? Math.min(100, Math.round((raised/Math.max(1,goal))*100)) : 0
-  const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
-  // Donar al proyecto con API real (nuevo endpoint):
-  // POST /api/v1/finance/donations/project/  { project, amount }
-  // Luego refrescamos con GET /projects/:id/ para leer amount_raised actualizado.
+  // Donar al proyecto con API real:
+  // POST /finance/donations/project/  { project, amount }
+  // Luego refrescamos con GET /projects/:id/ y volvemos a pedir el summary.
   async function onDonate(){
     setErr('')
 
@@ -139,7 +145,7 @@ export default function ProjectDetail(){
 
     setSaving(true)
     try{
-      // 1) Financiar con el NUEVO endpoint
+      // 1) Financiar con el endpoint de donaciones
       const body = {
         project: Number(id),
         amount: applied.toFixed(2), // la API espera decimal como string
@@ -169,9 +175,8 @@ export default function ProjectDetail(){
         artistName: fresh.artist_name || '',
       })
 
-      // 3) Actualizar mis stats localmente por si el GET no existe
-      setMyCount(c => c + 1)
-      setMyTotal(t => t + applied)
+      // 3) Volver a consultar el SUMMARY (nuevo endpoint) tras donar
+      await fetchSummary(Number(id), Number(user.id))
 
       // 4) Mostrar modal de agradecimiento (ES + $)
       const serverMsg = res?.data?.message
@@ -245,7 +250,7 @@ export default function ProjectDetail(){
                 Recaudado <span className="font-semibold">${fmt(raised)}</span> de ${fmt(goal)} — {pct}%.
               </div>
 
-              {/* Tus estadísticas personales */}
+              {/* Tus estadísticas personales (desde summary) */}
               <div className="text-xs text-slate-500 mt-1">
                 Tus aportes: <strong>{myCount}</strong> · Total donado: <strong>${fmt(myTotal)}</strong>
               </div>
