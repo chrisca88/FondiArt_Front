@@ -4,7 +4,26 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import authService from '../../services/authService.js'
 
-// ---- helpers ----
+// =========================
+// Helpers de normalización
+// =========================
+const coalesce = (obj, keys = []) => {
+  for (const k of keys) {
+    const v = obj?.[k]
+    if (v !== undefined && v !== null) return v
+  }
+  return undefined
+}
+const toNum = (v, def = 0) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : def
+}
+const toBool = (v) => {
+  if (v === true || v === 1 || v === '1' || v === 'true') return true
+  if (v === false || v === 0 || v === '0' || v === 'false') return false
+  return Boolean(v)
+}
+
 const slugify = (s = '') =>
   String(s)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -50,13 +69,18 @@ const getMyRating = (uid, artId) => {
   } catch { return 0 }
 }
 
-// ¿Es venta directa? Si no hay fracción ni totales lo consideramos directa
+// ¿Es venta directa? Si no hay fracciones (en ambos formatos) lo consideramos directa
 const detectDirect = (a) => {
-  const vd = a?.venta_directa
-  if (vd === 1 || vd === true || vd === '1') return true
-  const noFraction = a?.fractionFrom == null
-  const noTotals   = a?.fractionsTotal == null
-  return !!(noFraction && noTotals)
+  // soportar venta_directa y ventaDirecta
+  const vdRaw = coalesce(a, ['venta_directa', 'ventaDirecta', 'directSale'])
+  if (vdRaw !== undefined) {
+    const vd = toBool(vdRaw)
+    if (vd) return true
+  }
+  // si no hay configuración de fracciones, lo tomamos como directa
+  const hasFractionFrom = coalesce(a, ['fractionFrom', 'fraction_from']) !== undefined
+  const hasTotals      = coalesce(a, ['fractionsTotal', 'fractions_total']) !== undefined
+  return !(hasFractionFrom || hasTotals)
 }
 
 /* =========================
@@ -151,25 +175,39 @@ export default function ArtworkDetail(){
         if (!alive) return
 
         const isDirect = detectDirect(raw)
-        const gallery = Array.isArray(raw.gallery) && raw.gallery.length
-          ? raw.gallery.map(fixImageUrl)
-          : [fixImageUrl(raw.image)].filter(Boolean)
+
+        // soportamos image/gallery en ambos formatos
+        const rawImage = coalesce(raw, ['image'])
+        const rawGallery = coalesce(raw, ['gallery'])
+        const gallery = Array.isArray(rawGallery) && rawGallery.length
+          ? rawGallery.map(fixImageUrl)
+          : [fixImageUrl(rawImage)].filter(Boolean)
 
         const mapped = {
-          id: raw.id,
-          title: raw.title,
-          artist: (raw.artist?.name || raw.artist || '').trim(),
-          image: fixImageUrl(raw.image),
+          id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
+          title: coalesce(raw, ['title', 'titulo']) ?? '',
+          artist: (coalesce(raw, ['artist?.name', 'artist_name', 'artist']) ?? '').toString().trim(),
+          image: fixImageUrl(rawImage),
           gallery,
-          description: raw.description || '',
+          description: coalesce(raw, ['description', 'descripcion']) ?? '',
           tags: Array.isArray(raw.tags) ? raw.tags : (raw.tags ? [String(raw.tags)] : []),
-          price: Number(raw.price || 0),
-          fractionFrom: Number(raw.fractionFrom || 0),
-          fractionsTotal: isDirect ? 1 : Number(raw.fractionsTotal || 0),
-          fractionsLeft: isDirect ? 1 : Number((raw.fractionsLeft ?? raw.fractionsTotal) || 0),
-          createdAt: raw.createdAt,
-          status: String(raw.status || '').toLowerCase(),
-          estado_venta: String(raw.estado_venta || '').toLowerCase(),
+          price: toNum(coalesce(raw, ['price', 'precio']), 0),
+          // soportar fraction_from / fractionFrom
+          fractionFrom: toNum(coalesce(raw, ['fractionFrom', 'fraction_from']), 0),
+          // soportar fractions_total / fractionsTotal
+          fractionsTotal: isDirect ? 1 : toNum(coalesce(raw, ['fractionsTotal', 'fractions_total']), 0),
+          // soportar fractions_left / fractionsLeft (fallback a total si viene undefined)
+          fractionsLeft: isDirect
+            ? 1
+            : (() => {
+                const left = coalesce(raw, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+                if (left !== undefined) return toNum(left, 0)
+                const tot = coalesce(raw, ['fractionsTotal', 'fractions_total'])
+                return toNum(tot, 0)
+              })(),
+          createdAt: coalesce(raw, ['createdAt', 'created_at', 'created']),
+          status: String(coalesce(raw, ['status']) || '').toLowerCase(),
+          estado_venta: String(coalesce(raw, ['estado_venta', 'estadoVenta']) || '').toLowerCase(),
           directSale: isDirect,
         }
         setData(mapped)
@@ -178,11 +216,11 @@ export default function ArtworkDetail(){
         try {
           const { data: r } = await authService.client.get(`/artworks/${id}/rating/`)
           const serverMy = Number(r?.my || 0)
-          const cachedMy = user?.id ? getMyRating(user.id, raw.id) : 0
+          const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           const my = serverMy || cachedMy || 0
           setRating({ avg: Number(r?.avg || 0), count: Number(r?.count || 0), my })
         } catch(e) {
-          const cachedMy = user?.id ? getMyRating(user.id, raw.id) : 0
+          const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           setRating(prev => ({ ...prev, my: cachedMy }))
         }
 
@@ -204,9 +242,9 @@ export default function ArtworkDetail(){
   // valores para UI de tokenizadas
   const soldPct = useMemo(()=>{
     if(!data || isDirect) return 0
-    const tot = Number(data.fractionsTotal || 0)
+    const tot = toNum(data.fractionsTotal, 0)
     if (!tot) return 0
-    return Math.round(100 - (Number(data.fractionsLeft||0) / tot) * 100)
+    return Math.round(100 - (toNum(data.fractionsLeft, 0) / tot) * 100)
   }, [data, isDirect])
 
   // precio “unitario”: fracción en tokenizadas, precio final en directas
@@ -266,8 +304,18 @@ export default function ArtworkDetail(){
       // refresco rápido del estado por si cambió algo en back (solo GET)
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
       const directFresh = detectDirect(fresh)
-      const frTotal = Number(fresh.fractionsTotal ?? 0)
-      const frLeft  = Number(fresh.fractionsLeft ?? (directFresh ? 1 : 0))
+
+      // normalizar totales y disponibles desde el back
+      const frTotal = directFresh
+        ? 1
+        : toNum(coalesce(fresh, ['fractionsTotal', 'fractions_total']), 0)
+      const frLeft = directFresh
+        ? 1
+        : (() => {
+            const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+            if (left !== undefined) return toNum(left, 0)
+            return frTotal // fallback razonable si el back no devuelve left
+          })()
 
       if (!directFresh) {
         // TOKENIZADA -> API real
@@ -282,15 +330,22 @@ export default function ArtworkDetail(){
         // Actualizamos localmente y/o refrescamos
         try {
           const { data: fresh2 } = await authService.client.get(`/artworks/${data.id}/`)
+          const nextLeft = (() => {
+            const l = coalesce(fresh2, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+            if (l !== undefined) return toNum(l, 0)
+            const t = coalesce(fresh2, ['fractionsTotal', 'fractions_total'])
+            return Math.max(0, toNum(t, 0) - desired)
+          })()
           setData(prev => ({
             ...prev,
-            fractionsLeft: Number(fresh2.fractionsLeft ?? Math.max(0, frLeft - desired)),
-            status: String(fresh2.status || prev.status || '').toLowerCase(),
-            estado_venta: String(fresh2.estado_venta || prev.estado_venta || '').toLowerCase(),
+            fractionsLeft: nextLeft,
+            fractionsTotal: toNum(coalesce(fresh2, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? frTotal),
+            status: String(coalesce(fresh2, ['status']) || prev?.status || '').toLowerCase(),
+            estado_venta: String(coalesce(fresh2, ['estado_venta', 'estadoVenta']) || prev?.estado_venta || '').toLowerCase(),
           }))
         } catch {
           setData(prev => {
-            const left = Math.max(0, Number(prev.fractionsLeft || 0) - desired)
+            const left = Math.max(0, toNum(prev?.fractionsLeft, 0) - desired)
             const next = { ...prev, fractionsLeft: left }
             if (left === 0) next.estado_venta = 'vendida'
             return next
