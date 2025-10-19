@@ -135,7 +135,7 @@ export default function ProjectDetail(){
         artistName: fresh.artist_name || '',
       })
 
-      // 3) Mensaje de éxito
+      // 3) Mostrar modal de agradecimiento
       const serverMsg = res?.data?.message
       setOkMsg(serverMsg || `¡Gracias por apoyar este proyecto! Se realizó un aporte de $${fmt(applied)}.`)
       setOk(true)
@@ -243,6 +243,7 @@ export default function ProjectDetail(){
         </div>
       </div>
 
+      {/* Modal de agradecimiento */}
       {ok && (
         <SuccessModal
           message={okMsg || '¡Gracias por apoyar este proyecto!'}
@@ -254,17 +255,31 @@ export default function ProjectDetail(){
 }
 
 function SuccessModal({ message, onClose }){
+  // cerrar con Esc
+  useEffect(()=>{
+    const onKey = (e)=> { if (e.key === 'Escape') onClose?.() }
+    window.addEventListener('keydown', onKey)
+    return ()=> window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4">
+    <div
+      className="fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4"
+      onClick={(e)=>{ if (e.target === e.currentTarget) onClose?.() }} // cerrar al clickear el backdrop
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
         <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-green-100 text-green-600">
-          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <h3 className="text-lg font-bold">¡Listo!</h3>
+        <h3 className="text-lg font-bold">¡Gracias por tu aporte!</h3>
         <p className="mt-1 text-slate-700">{message}</p>
-        <button onClick={onClose} className="btn btn-primary mt-5 w-full">Aceptar</button>
+        <button onClick={onClose} className="btn btn-primary mt-5 w-full" autoFocus>
+          Aceptar
+        </button>
       </div>
     </div>
   )
