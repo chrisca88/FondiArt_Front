@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { useNavigate, Link } from 'react-router-dom'
-import { login, loginDemo } from '../../features/auth/authSlice.js'
+import { login } from '../../features/auth/authSlice.js'
 
 export default function Login(){
   const [email, setEmail] = useState('')
@@ -141,56 +141,11 @@ export default function Login(){
 
           <div className="my-6 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
+          {/* Botón social opcional (Google) */}
           <div className="grid sm:grid-cols-1 gap-3">
             <button className="w-full rounded-xl border border-slate-300 bg-white/80 px-4 py-2.5 text-sm font-semibold hover:bg-white">
               Continuar con Google
             </button>
-
-            <div className="my-6 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              {/* Comprador (demo) */}
-              <button
-                type="button"
-                className="w-full rounded-xl border border-slate-300 bg-white/80 px-4 py-2.5 text-sm font-semibold hover:bg-white"
-                onClick={async ()=>{
-                  setError(null)
-                  const action = await dispatch(loginDemo('buyer'))
-                  if (loginDemo.fulfilled.match(action)) {
-                    if (!remember) {
-                      localStorage.removeItem('token')
-                      localStorage.removeItem('user')
-                    }
-                    navigate('/dashboard', { replace: true })
-                  } else {
-                    setError('No se pudo iniciar sesión demo.')
-                  }
-                }}
-              >
-                Entrar como Comprador (demo)
-              </button>
-
-              {/* Artista (demo) */}
-              <button
-                type="button"
-                className="w-full rounded-xl border border-slate-300 bg-white/80 px-4 py-2.5 text-sm font-semibold hover:bg-white"
-                onClick={async ()=>{
-                  setError(null)
-                  const action = await dispatch(loginDemo('artist'))
-                  if (loginDemo.fulfilled.match(action)) {
-                    if (!remember) {
-                      localStorage.removeItem('token')
-                      localStorage.removeItem('user')
-                    }
-                    navigate('/dashboard', { replace: true })
-                  } else {
-                    setError('No se pudo iniciar sesión demo.')
-                  }
-                }}
-              >
-                Entrar como Artista (demo)
-              </button>
-            </div>
           </div>
 
           <p className="mt-6 text-center text-sm text-slate-600">
