@@ -13,36 +13,57 @@ export default function AuctionDetail(){
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
 
-  // form ganador
-  const [winnerName, setWinnerName] = useState('')
-  const [winnerDni, setWinnerDni] = useState('')
+  // form ganador (deshabilitado por ahora)
+  const [winnerName] = useState('')
+  const [winnerDni] = useState('')
   const [finalPrice, setFinalPrice] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saveErr, setSaveErr] = useState('')
-  const [ok, setOk] = useState(false)
+  const [saving] = useState(false)
+  const [saveErr] = useState('')
+  const [ok] = useState(false)
 
-  useEffect(()=>{
+  useEffect(()=> {
     let alive = true
     setLoading(true)
     setErr(null)
-    api.get(`/api/v1/auctions/${id}/`).then(res => {
+
+    const url = `/api/v1/auctions/${id}/`
+    const base = api?.defaults?.baseURL || '(sin baseURL)'
+    const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
+
+    console.log('[AuctionDetail][useEffect] init →', { id, baseURL: base, url, hasAuth: !!auth })
+
+    api.get(url).then(res => {
       if(!alive) return
-      const item = res.data
-      setData(item)
-      setFinalPrice(item.final_price || '')
+      console.log('[AuctionDetail][GET] status=', res?.status, 'data=', res?.data)
+
+      const item = res?.data
+      if (!item || typeof item !== 'object') {
+        console.warn('[AuctionDetail] Respuesta sin objeto válido:', item)
+      }
+      setData(item || null)
+      setFinalPrice(item?.final_price || '')
       setLoading(false)
-    }).catch(e=>{
+    }).catch(e => {
       if(!alive) return
-      setErr(e.response?.data?.detail || e.message || 'No se pudo cargar la subasta');
+      const status = e?.response?.status
+      const payload = e?.response?.data
+      console.error('[AuctionDetail][GET][ERROR] status=', status, 'payload=', payload, 'message=', e?.message)
+      setErr(
+        payload?.detail ||
+        payload?.message ||
+        e?.message ||
+        'No se pudo cargar la subasta'
+      )
       setLoading(false)
     })
-    return ()=>{ alive=false }
+
+    return ()=> { alive=false }
   }, [id])
 
   const isAuctioned = data?.status === 'auctioned'
 
-  // Fecha legible para UI
-  const auctionDateText = useMemo(()=>{
+  // Fecha legible (si existiera otra fecha legacy)
+  const auctionDateText = useMemo(()=> {
     const iso = data?.auctionDate
     if (!iso) return null
     const [yyyy, mm, dd] = String(iso).split('-')
@@ -50,8 +71,8 @@ export default function AuctionDetail(){
     try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
   }, [data?.auctionDate])
 
-  // Permitir cerrar sólo si hoy >= fecha subasta
-  const canCloseToday = useMemo(()=>{
+  // Permitir cerrar sólo si hoy >= fecha subasta (si se usa ese campo)
+  const canCloseToday = useMemo(()=> {
     const iso = String(data?.auctionDate || '')
     if (!iso) return false
     const today = new Date().toISOString().slice(0,10)
@@ -59,6 +80,7 @@ export default function AuctionDetail(){
   }, [data?.auctionDate])
 
   if (user?.role !== 'admin'){
+    console.warn('[AuctionDetail] Usuario sin rol admin. role=', user?.role)
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -69,17 +91,53 @@ export default function AuctionDetail(){
     )
   }
 
-  if (loading) return <section className="section-frame py-16"><Skeleton/></section>
-  if (err) return (
-    <section className="section-frame py-16">
-      <div className="card-surface p-8 text-center">
-        <h3 className="text-xl font-bold">Error</h3>
-        <p className="text-slate-600 mt-1">{err}</p>
-        <div className="mt-4"><Link to="/admin/subastas" className="btn btn-primary">Volver</Link></div>
-      </div>
-    </section>
-  )
-  if (!data) return null
+  if (loading) {
+    console.log('[AuctionDetail] loading=true')
+    return (
+      <section className="section-frame py-16">
+        <Skeleton/>
+        {import.meta.env.DEV && (
+          <pre className="mt-6 text-xs text-slate-600">[DEBUG] cargando… id: {id}</pre>
+        )}
+      </section>
+    )
+  }
+
+  if (err) {
+    console.warn('[AuctionDetail] error UI:', err)
+    return (
+      <section className="section-frame py-16">
+        <div className="card-surface p-8 text-center">
+          <h3 className="text-xl font-bold">Error</h3>
+          <p className="text-slate-600 mt-1">{err}</p>
+          <div className="mt-4"><Link to="/admin/subastas" className="btn btn-primary">Volver</Link></div>
+        </div>
+        {import.meta.env.DEV && (
+          <pre className="mt-6 text-xs text-slate-600">[DEBUG] err: {String(err)}</pre>
+        )}
+      </section>
+    )
+  }
+
+  if (!data) {
+    console.warn('[AuctionDetail] data es null/undefined tras cargar.')
+    return (
+      <section className="section-frame py-16">
+        <div className="card-surface p-8 text-center">
+          <h3 className="text-xl font-bold">Sin datos</h3>
+          <p className="text-slate-600 mt-1">No se encontró información de la subasta.</p>
+          <div className="mt-4"><Link to="/admin/subastas" className="btn btn-primary">Volver</Link></div>
+        </div>
+      </section>
+    )
+  }
+
+  // Campos defensivos (evita romper si el back no los envió)
+  const artworkTitle = data.artwork_title || data.title || 'Obra'
+  const artistName   = data.artist_name || 'Artista'
+  const status       = data.status || '—'
+  const startDate    = data.start_date ? new Date(data.start_date) : null
+  const endDate      = data.end_date   ? new Date(data.end_date)   : null
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -89,8 +147,15 @@ export default function AuctionDetail(){
           <span className="mx-2">/</span>
           <Link to="/admin/subastas" className="hover:underline">Subastas</Link>
           <span className="mx-2">/</span>
-          <span className="text-slate-700 font-medium">{data.title}</span>
+          <span className="text-slate-700 font-medium">{artworkTitle}</span>
         </div>
+
+        {import.meta.env.DEV && (
+          <details className="rounded-xl border border-slate-200 bg-white/70 p-3">
+            <summary className="cursor-pointer text-sm font-semibold">DEBUG (click para ver)</summary>
+            <pre className="mt-2 text-xs overflow-x-auto">{JSON.stringify({ id, data }, null, 2)}</pre>
+          </details>
+        )}
 
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Imagen */}
@@ -98,46 +163,55 @@ export default function AuctionDetail(){
             <div className="overflow-hidden rounded-3xl ring-1 ring-slate-200 bg-white/60">
               <img
                 src={(() => {
-                  let imageUrl = data.artwork_image;
-                  if (typeof imageUrl === 'string' && !imageUrl.startsWith('http')) {
-                    imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                  let imageUrl = data.artwork_image || data.image || ''
+                  if (typeof imageUrl === 'string' && imageUrl && !imageUrl.startsWith('http')) {
+                    const base = api?.defaults?.baseURL || ''
+                    imageUrl = base + imageUrl
                   }
-                  return imageUrl;
+                  if (!imageUrl) {
+                    console.warn('[AuctionDetail] No vino artwork_image/image en la data; mostrando placeholder.')
+                    imageUrl = 'https://via.placeholder.com/800x600?text=Sin+imagen'
+                  }
+                  return imageUrl
                 })()}
-                alt={data.artwork_title}
+                alt={artworkTitle}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
               />
             </div>
           </div>
 
-          {/* Formulario ganador */}
+          {/* Panel */}
           <aside className="lg:col-span-2">
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-extrabold leading-tight">{data.artwork_title}</h1>
-                  <p className="text-slate-600">{data.artist_name}</p>
+                  <h1 className="text-2xl font-extrabold leading-tight">{artworkTitle}</h1>
+                  <p className="text-slate-600">{artistName}</p>
                   <div className="text-sm text-slate-700 mt-1">
-                    <strong>Inicio:</strong> {new Date(data.start_date).toLocaleString('es-AR')}
+                    <strong>Inicio:</strong>{' '}
+                    {startDate ? startDate.toLocaleString('es-AR') : '—'}
                   </div>
                   <div className="text-sm text-slate-700">
-                    <strong>Finaliza:</strong> {new Date(data.end_date).toLocaleString('es-AR')}
+                    <strong>Finaliza:</strong>{' '}
+                    {endDate ? endDate.toLocaleString('es-AR') : '—'}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${data.status === 'finished' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {data.status}
+                <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${
+                  status === 'finished' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {status}
                 </span>
               </div>
 
-              {data.status === 'finished' && (
+              {status === 'finished' && (
                 <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
                   <div><strong>Ganador:</strong> {data.buyer || '—'}</div>
                   <div><strong>Precio final:</strong> ${Number(data.final_price||0).toLocaleString('es-AR')}</div>
                 </div>
               )}
 
-              {data.status !== 'finished' && (
+              {status !== 'finished' && (
                 <>
                   <div>
                     <label className="form-label">Nombre del ganador</label>
@@ -163,7 +237,7 @@ export default function AuctionDetail(){
         </div>
       </div>
 
-      {/* Modal éxito */}
+      {/* Modal éxito (no se usa aún en este flujo) */}
       {ok && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
