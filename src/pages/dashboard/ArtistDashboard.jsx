@@ -8,11 +8,12 @@ const fixImageUrl = (url) => {
   if (typeof url !== 'string') return url
   const marker = 'https%3A/'
   const index = url.indexOf(marker)
-  if (index !== -1) {
-    return 'https://' + url.substring(index + marker.length)
-  }
-  return url
+  return index !== -1 ? 'https://' + url.substring(index + marker.length) : url
 }
+
+// normaliza booleanos (true/false, "true"/"false", 1/0, "1"/"0")
+const toBool = (v) =>
+  v === true || v === 'true' || v === 1 || v === '1'
 
 export default function ArtistDashboard() {
   const user = useSelector((s) => s.auth.user)
@@ -22,10 +23,14 @@ export default function ArtistDashboard() {
   // --------- estado del formulario ---------
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [directSale, setDirectSale] = useState(true) // Venta directa por defecto (dejado como lo tenías)
+
+  // Por defecto lo dejamos en true para nueva obra, pero si estamos editando
+  // lo sobreescribimos con el valor del backend (venta_directa).
+  const [directSale, setDirectSale] = useState(true)
+
   const [price, setPrice] = useState('')
   const [fractionsTotal, setFractionsTotal] = useState('')
-  const [fractionFrom, setFractionFrom] = useState('') // (no lo usa el back, lo dejamos por si lo necesitás luego)
+  const [fractionFrom, setFractionFrom] = useState('') // placeholder por si luego se usa
 
   // galería e imágenes
   const [gallery, setGallery] = useState([''])
@@ -65,7 +70,8 @@ export default function ArtistDashboard() {
         setInitialArtwork(it)
         setTitle(it.title || '')
         setDescription(it.description || '')
-        setDirectSale(!!it.venta_directa)
+        // ✅ tomar venta_directa del backend (true/false/"true"/1…)
+        setDirectSale(toBool(it.venta_directa))
         setPrice(String(it.price || it.price_reference || ''))
         setFractionsTotal(it.fractions_total ? String(it.fractions_total) : '')
         const rawGallery = Array.isArray(it.gallery) && it.gallery.length ? it.gallery : [it.image]
@@ -174,14 +180,19 @@ export default function ArtistDashboard() {
         const currentPrice = parseFloat(price) || 0
         const initialPrice = parseFloat(initialArtwork.price || initialArtwork.price_reference || 0)
         if (currentPrice !== initialPrice) {
-          payload.price = currentPrice // <- siempre 'price'
+          payload.price = currentPrice // snake_case/clave esperada por el back para precio
+        }
+
+        // venta_directa puede cambiar → incluir siempre si difiere
+        if (toBool(initialArtwork.venta_directa) !== directSale) {
+          payload.venta_directa = directSale
         }
 
         if (!directSale) {
           const currentFractionsTotal = parseInt(fractionsTotal, 10) || 0
           const initialFractionsTotal = parseInt(initialArtwork.fractions_total, 10) || 0
           if (currentFractionsTotal !== initialFractionsTotal) {
-            payload.fractions_total = currentFractionsTotal // <- snake_case para el back
+            payload.fractions_total = currentFractionsTotal
           }
         }
 
@@ -201,17 +212,6 @@ export default function ArtistDashboard() {
           payload.tags = Array.from(tags)
         }
 
-        if (import.meta.env.DEV) {
-          const authHdr =
-            authService.client.defaults.headers?.Authorization ||
-            authService.client.defaults.headers?.common?.Authorization ||
-            null
-          console.log('[ArtistDashboard][PATCH] Will send → /artworks/%s/', editId)
-          console.log('  baseURL:', authService.client.defaults.baseURL)
-          console.log('  payload:', payload)
-          console.log('  Authorization present?:', !!authHdr, 'sample:', authHdr ? String(authHdr).slice(0, 18) + '…' : '(none)')
-        }
-
         if (Object.keys(payload).length > 0) {
           await authService.client.patch(`/artworks/${editId}/`, payload)
           setSuccessMsg('¡La obra se actualizó correctamente!')
@@ -222,42 +222,17 @@ export default function ArtistDashboard() {
         // -------- CREAR (POST) --------
         const createPayload = {
           ...basePayload,
-          price: parseFloat(price) || 0, // <- siempre 'price'
+          price: parseFloat(price) || 0,
         }
         if (!directSale) {
           createPayload.fractions_total = parseInt(fractionsTotal, 10) || 0
         }
 
-        if (import.meta.env.DEV) {
-          const authHdr =
-            authService.client.defaults.headers?.Authorization ||
-            authService.client.defaults.headers?.common?.Authorization ||
-            null
-          console.log('[ArtistDashboard][POST] About to send request')
-          console.log('  url:', '/artworks/create/')
-          console.log('  baseURL:', authService.client.defaults.baseURL)
-          console.log('  venta_directa:', directSale)
-          console.log('  payload:', createPayload)
-          console.log('  Authorization present?:', !!authHdr, 'sample:', authHdr ? String(authHdr).slice(0, 18) + '…' : '(none)')
-        }
-
-        // ✅ endpoint correcto (sin /api/v1)
         await authService.client.post('/artworks/create/', createPayload)
         setSuccessMsg('¡Obra publicada con éxito!')
       }
       setSuccessOpen(true)
     } catch (err) {
-      console.error('--- DETALLE DEL ERROR DE PUBLICACIÓN ---')
-      console.error('Mensaje:', err.message)
-      if (err.response) {
-        console.error('Respuesta (data):', err.response.data)
-        console.error('Respuesta (status):', err.response.status)
-      } else if (err.request) {
-        console.error('Petición enviada (sin respuesta):', err.request)
-      }
-      console.error('Configuración de Axios:', err.config)
-      console.error('--- FIN DEL DETALLE DEL ERROR ---')
-
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Error al guardar la obra.'
       setError(errorMessage)
     } finally {
@@ -328,7 +303,12 @@ export default function ArtistDashboard() {
 
                 <div className="mt-5">
                   <label className="inline-flex items-center gap-2">
-                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={directSale} onChange={(e) => setDirectSale(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={directSale}
+                      onChange={(e) => setDirectSale(e.target.checked)}
+                    />
                     <span className="text-slate-800 font-medium">Habilitar Venta Directa</span>
                   </label>
                 </div>
