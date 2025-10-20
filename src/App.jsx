@@ -80,7 +80,7 @@ export default function App(){
           <Route path="/admin" element={<AdminDashboard/>} />
           <Route path="/admin/obra/:id" element={<AdminArtworkReview/>} />
           <Route path="/admin/subastas" element={<AdminAuctions/>} />
-          <Route path="/admin/subasta/:id" element={<AuctionDetail/>} />
+          <Route path="/admin/subastas/:id" element={<AuctionDetail/>} />
         </Route>
       </Route>
     </Routes>
