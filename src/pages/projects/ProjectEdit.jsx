@@ -103,7 +103,7 @@ export default function ProjectEdit(){
     try {
       setUploading(true)
       // usamos URL absoluta para respetar exactamente /api/upload/ en :80
-      const res = await authService.client.post('http://localhost:80/api/upload/', formData, {
+      const res = await authService.client.post('http://localhost:80/api/v1/upload/', formData, {
         // No seteamos Content-Type manualmente; el navegador lo hace con el boundary correcto
       })
       // se asume que el backend responde con { url: "https://res.cloudinary.com/..." } o similar
@@ -135,7 +135,7 @@ export default function ProjectEdit(){
         description: form.description?.trim(),
         image: form.cover?.trim(), // importante: la URL recibida de /api/upload/
       }
-      await authService.client.patch(`http://localhost:80/api/projects/${id}/`, payload)
+      await authService.client.patch(`http://localhost:80/api/v1/projects/${id}/`, payload)
       setOk(true)
       setTimeout(()=> navigate('/mis-proyectos', { replace:true }), 1000)
     }catch(eApi){
