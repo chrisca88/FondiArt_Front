@@ -28,9 +28,29 @@ export default function AuctionDetail(){
     setLoading(true)
     setErr(null)
 
-    api.get(`/api/v1/auctions/${id}/`).then(res => {
+    const endpoint = `/api/v1/auctions/${id}/`
+    if (import.meta.env.DEV) {
+      const base = api?.defaults?.baseURL
+      const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
+      console.log('[AuctionDetail][FETCH] GET', { endpoint, baseURL: base, hasAuth: !!auth, id })
+    }
+
+    api.get(endpoint).then(res => {
       if(!alive) return
       const item = res?.data
+
+      if (import.meta.env.DEV) {
+        console.log('[AuctionDetail][FETCH][OK] status=', res?.status)
+        console.log('[AuctionDetail][FETCH][DATA] keys=', item ? Object.keys(item) : '(null)')
+        console.log('[AuctionDetail][FETCH][ForFilters]', {
+          id: item?.id,
+          status: item?.status,
+          auction_date: item?.auction_date,
+          artwork_title: item?.artwork_title,
+          artist_name: item?.artist_name
+        })
+      }
+
       setData(item || null)
       setFinalPrice(item?.final_price || '')
       setAuctionLocal(toLocalInputValue(item?.auction_date))
@@ -38,6 +58,13 @@ export default function AuctionDetail(){
     }).catch(e => {
       if(!alive) return
       const payload = e?.response?.data
+      if (import.meta.env.DEV) {
+        console.error('[AuctionDetail][FETCH][ERROR]', {
+          status: e?.response?.status,
+          payload,
+          message: e?.message
+        })
+      }
       setErr(payload?.detail || payload?.message || e?.message || 'No se pudo cargar la subasta')
       setLoading(false)
     })
@@ -57,7 +84,9 @@ export default function AuctionDetail(){
     if (/^https?:\/\//i.test(u)) return u
     if (u.startsWith('/')) {
       const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
-      return base + u
+      const out = base + u
+      if (import.meta.env.DEV) console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
+      return out
     }
     return u
   }
@@ -82,7 +111,7 @@ export default function AuctionDetail(){
     return d.toISOString().slice(0,19) + 'Z'
   }
 
-  // Texto legible si hubieran datos legacy
+  // Texto legible si hubieran datos legacy (se mantiene por compatibilidad)
   const auctionDateText = useMemo(()=> {
     const iso = data?.auctionDate
     if (!iso) return null
@@ -110,6 +139,7 @@ export default function AuctionDetail(){
   }
 
   if (loading) {
+    if (import.meta.env.DEV) console.log('[AuctionDetail] UI loading…')
     return (
       <section className="section-frame py-16">
         <Skeleton/>
@@ -118,6 +148,7 @@ export default function AuctionDetail(){
   }
 
   if (err) {
+    if (import.meta.env.DEV) console.warn('[AuctionDetail] UI error:', err)
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -130,6 +161,7 @@ export default function AuctionDetail(){
   }
 
   if (!data) {
+    if (import.meta.env.DEV) console.warn('[AuctionDetail] UI sin data (null)')
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -154,17 +186,48 @@ export default function AuctionDetail(){
     const isoZ = localToIsoZ(auctionLocal)
     if (!isoZ) { setSaveErr('Elegí una fecha y hora válidas.'); return }
     setSavingDate(true)
+
+    if (import.meta.env.DEV) {
+      console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/', id, { auction_date: isoZ })
+    }
+
     try{
       const { data: updated } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
+      if (import.meta.env.DEV) {
+        console.log('[AuctionDetail][PATCH][OK] updated keys=', updated ? Object.keys(updated) : '(null)')
+        console.log('[AuctionDetail][PATCH][ForFilters]', {
+          id: updated?.id,
+          status: updated?.status,
+          auction_date: updated?.auction_date
+        })
+      }
       setData(updated)
       setAuctionLocal(toLocalInputValue(updated?.auction_date))
       setSaveOk(true)
     }catch(e){
       const payload = e?.response?.data
+      if (import.meta.env.DEV) {
+        console.error('[AuctionDetail][PATCH][ERROR]', {
+          status: e?.response?.status,
+          payload,
+          message: e?.message
+        })
+      }
       setSaveErr(payload?.detail || payload?.auction_date || payload?.message || e?.message || 'No se pudo actualizar la fecha.')
     }finally{
       setSavingDate(false)
     }
+  }
+
+  // Log final de lo que se muestra (útil si los filtros de otra vista no reflejan)
+  if (import.meta.env.DEV) {
+    console.log('[AuctionDetail][RENDER]', {
+      id,
+      status,
+      hasImage: !!(data.artwork_image || data.image),
+      auction_date: data.auction_date,
+      auctionLocal
+    })
   }
 
   return (
