@@ -20,7 +20,7 @@ export default function ProjectEdit(){
   const [error, setError] = useState('')
   const [ok, setOk] = useState(false)
 
-  // Subida a Cloudinary
+  // Subida (paso 1: /api/upload/)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState('')
   const fileInputRef = useRef(null)
@@ -29,7 +29,7 @@ export default function ProjectEdit(){
   const [form, setForm] = useState({
     title: '',
     description: '',
-    cover: '',
+    cover: '',   // acá guardamos la URL que devuelva /api/upload/
   })
 
   // Cargar: API real primero, mock como fallback. NO redirige en error.
@@ -39,6 +39,7 @@ export default function ProjectEdit(){
       setLoading(true)
       setError('')
       try {
+        // GET detalle (mantenemos el endpoint existente del proyecto)
         const { data } = await authService.client.get(`/projects/${id}/`)
         if (!alive) return
         setForm({
@@ -72,12 +73,19 @@ export default function ProjectEdit(){
     setForm(f => ({ ...f, [name]: value }))
   }
 
-  // ----- subida a Cloudinary (unsigned) -----
-  async function uploadToCloudinary(file){
+  // ---------- SUBIDA: /api/upload/ (recibe un archivo y responde con la URL de Cloudinary) ----------
+  const onPickFile = () => {
     setUploadErr('')
-    if (!file) { setUploadErr('No se seleccionó archivo.'); return }
+    fileInputRef.current?.click()
+  }
 
-    // Validaciones simples
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    // limpiar para poder re-seleccionar el mismo archivo si hace falta
+    e.target.value = ''
+    setUploadErr('')
+
+    if (!file) return
     const maxMB = 10
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
     if (!allowed.includes(file.type)) {
@@ -89,68 +97,49 @@ export default function ProjectEdit(){
       return
     }
 
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD
-    const preset    = import.meta.env.VITE_CLOUDINARY_UNSIGNED_PRESET
-    const folder    = import.meta.env.VITE_CLOUDINARY_FOLDER || 'fondiart/projects'
-
-    if (!cloudName || !preset) {
-      setUploadErr('Cloudinary no está configurado. Definí VITE_CLOUDINARY_CLOUD y VITE_CLOUDINARY_UNSIGNED_PRESET.')
-      return
-    }
-
-    const url = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
     const formData = new FormData()
-    formData.append('upload_preset', preset)
-    formData.append('folder', folder)
     formData.append('file', file)
 
-    try{
+    try {
       setUploading(true)
-      const res = await fetch(url, { method: 'POST', body: formData })
-      if (!res.ok) {
-        const t = await res.text().catch(()=>null)
-        throw new Error(t || `HTTP ${res.status}`)
-      }
-      const json = await res.json()
-      const secureUrl = json?.secure_url || json?.url
-      if (!secureUrl) throw new Error('La respuesta no incluyó la URL de la imagen.')
-      setForm(f => ({ ...f, cover: secureUrl }))
-    }catch(e){
-      setUploadErr(e?.message || 'No se pudo subir la imagen.')
-    }finally{
+      // usamos URL absoluta para respetar exactamente /api/upload/ en :80
+      const res = await authService.client.post('http://localhost:80/api/upload/', formData, {
+        // No seteamos Content-Type manualmente; el navegador lo hace con el boundary correcto
+      })
+      // se asume que el backend responde con { url: "https://res.cloudinary.com/..." } o similar
+      const url = res?.data?.url || res?.data?.secure_url || res?.data?.image || ''
+      if (!url) throw new Error('La respuesta del servidor no incluyó la URL de la imagen.')
+      setForm(f => ({ ...f, cover: url }))
+    } catch (eUp) {
+      const msg =
+        eUp?.response?.data?.detail ||
+        eUp?.response?.data?.message ||
+        eUp?.message ||
+        'No se pudo subir la imagen.'
+      setUploadErr(msg)
+    } finally {
       setUploading(false)
     }
   }
+  // --------------------------------------------------------------------------------------------------
 
-  const onPickFile = () => {
-    setUploadErr('')
-    fileInputRef.current?.click()
-  }
-
-  const onFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) uploadToCloudinary(file)
-    // limpiar el input para permitir re-seleccionar el mismo archivo si hace falta
-    e.target.value = ''
-  }
-  // ------------------------------------------
-
+  // Guardar cambios (paso 2: PATCH /api/projects/<id>/ con title, description, image)
   const onSubmit = async (e)=>{
     e.preventDefault()
     setError('')
     setSaving(true)
     try{
-      // PATCH real (solo campos permitidos)
+      // Usamos la URL absoluta pedida para actualizar el proyecto
       const payload = {
         title: form.title?.trim(),
         description: form.description?.trim(),
-        image: form.cover?.trim(),
+        image: form.cover?.trim(), // importante: la URL recibida de /api/upload/
       }
-      await authService.client.patch(`/projects/${id}/`, payload)
+      await authService.client.patch(`http://localhost:80/api/projects/${id}/`, payload)
       setOk(true)
       setTimeout(()=> navigate('/mis-proyectos', { replace:true }), 1000)
     }catch(eApi){
-      // Fallback a mock en dev
+      // Fallback a mock en dev (si no está la API real)
       try{
         await mockUpdateProject(id, {
           title: form.title?.trim(),
@@ -160,7 +149,12 @@ export default function ProjectEdit(){
         setOk(true)
         setTimeout(()=> navigate('/mis-proyectos', { replace:true }), 1000)
       }catch{
-        setError(eApi?.response?.data?.detail || eApi?.message || 'No se pudo guardar')
+        const msg =
+          eApi?.response?.data?.detail ||
+          eApi?.response?.data?.message ||
+          eApi?.message ||
+          'No se pudo guardar'
+        setError(msg)
       }
     }finally{
       setSaving(false)
@@ -193,32 +187,19 @@ export default function ProjectEdit(){
             <textarea id="description" name="description" className="input h-32" value={form.description} onChange={onChange}/>
           </div>
 
-          {/* Imagen / Cloudinary */}
+          {/* Imagen: flujo obligatorio por botón + /api/upload/ (sin input de URL) */}
           <div className="space-y-2">
             <label className="form-label">Imagen del proyecto</label>
 
-            {/* Botón para subir archivo */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={onPickFile}
-                disabled={uploading}
-                title="Subir imagen desde tu equipo"
-              >
-                {uploading ? 'Subiendo…' : 'Subir nueva imagen'}
-              </button>
-
-              {/* (opcional) permitir URL manual */}
-              <input
-                id="cover"
-                name="cover"
-                className="input flex-1 min-w-[240px]"
-                placeholder="o pegá una URL https://…"
-                value={form.cover}
-                onChange={onChange}
-              />
-            </div>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={onPickFile}
+              disabled={uploading}
+              title="Subir imagen desde tu equipo"
+            >
+              {uploading ? 'Subiendo…' : 'Subir nueva imagen'}
+            </button>
 
             {/* input file oculto */}
             <input
