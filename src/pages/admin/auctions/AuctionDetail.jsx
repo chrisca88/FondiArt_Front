@@ -23,33 +23,30 @@ export default function AuctionDetail(){
   const [saveErr, setSaveErr] = useState('')
   const [saveOk, setSaveOk] = useState(false)
 
+  // --- FETCH de DETALLE ---
   useEffect(()=> {
     let alive = true
     setLoading(true)
     setErr(null)
 
     const endpoint = `/api/v1/auctions/${id}/`
-    if (import.meta.env.DEV) {
-      const base = api?.defaults?.baseURL
-      const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
-      console.log('[AuctionDetail][FETCH] GET', { endpoint, baseURL: base, hasAuth: !!auth, id })
-    }
+    const base = api?.defaults?.baseURL
+    const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
+    console.log('[AuctionDetail][FETCH-DETAIL] GET', { endpoint, baseURL: base, hasAuth: !!auth, id })
 
     api.get(endpoint).then(res => {
       if(!alive) return
       const item = res?.data
 
-      if (import.meta.env.DEV) {
-        console.log('[AuctionDetail][FETCH][OK] status=', res?.status)
-        console.log('[AuctionDetail][FETCH][DATA] keys=', item ? Object.keys(item) : '(null)')
-        console.log('[AuctionDetail][FETCH][ForFilters]', {
-          id: item?.id,
-          status: item?.status,
-          auction_date: item?.auction_date,
-          artwork_title: item?.artwork_title,
-          artist_name: item?.artist_name
-        })
-      }
+      console.log('[AuctionDetail][FETCH-DETAIL][OK] status=', res?.status)
+      console.log('[AuctionDetail][FETCH-DETAIL][DATA] keys=', item ? Object.keys(item) : '(null)')
+      console.log('[AuctionDetail][FETCH-DETAIL][ForFilters]', {
+        id: item?.id,
+        status: item?.status,           // ← backend: 'upcoming' | 'finished' | 'cancelled'
+        auction_date: item?.auction_date,
+        artwork_title: item?.artwork_title,
+        artist_name: item?.artist_name
+      })
 
       setData(item || null)
       setFinalPrice(item?.final_price || '')
@@ -58,19 +55,71 @@ export default function AuctionDetail(){
     }).catch(e => {
       if(!alive) return
       const payload = e?.response?.data
-      if (import.meta.env.DEV) {
-        console.error('[AuctionDetail][FETCH][ERROR]', {
-          status: e?.response?.status,
-          payload,
-          message: e?.message
-        })
-      }
+      console.error('[AuctionDetail][FETCH-DETAIL][ERROR]', {
+        status: e?.response?.status,
+        payload,
+        message: e?.message
+      })
       setErr(payload?.detail || payload?.message || e?.message || 'No se pudo cargar la subasta')
       setLoading(false)
     })
 
     return ()=> { alive=false }
   }, [id])
+
+  // --- FETCH de LISTADO (solo para LOGS de filtros) ---
+  useEffect(()=> {
+    let alive = true
+    const listEndpoint = '/api/v1/auctions/'
+    console.log('[AuctionDetail][FETCH-LIST] GET', listEndpoint)
+
+    api.get(listEndpoint)
+      .then(res => {
+        if (!alive) return
+        const payload = res?.data
+        const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+        const total   = typeof payload?.count === 'number' ? payload.count : results.length
+
+        // resumen por status (backend válidos: 'upcoming', 'finished', 'cancelled')
+        const buckets = results.reduce((acc, x) => {
+          const k = (x?.status ?? '(sin status)')
+          acc[k] = (acc[k] || 0) + 1
+          return acc
+        }, {})
+
+        console.log('[AuctionDetail][FETCH-LIST][OK]', {
+          httpStatus: res?.status,
+          total_from_count: payload?.count,
+          results_len: results.length,
+          buckets_by_status: buckets,
+          expected_statuses: ['upcoming', 'finished', 'cancelled']
+        })
+
+        console.log('[AuctionDetail][FETCH-LIST][SAMPLE first 5]',
+          results.slice(0,5).map(r => ({
+            id: r?.id,
+            status: r?.status,
+            auction_date: r?.auction_date,
+            artwork_title: r?.artwork_title,
+            artist_name: r?.artist_name
+          }))
+        )
+
+        // Si tus filtros esperan 'active' o 'Upcoming' (capitalizado), NO van a matchear.
+        // Asegurate de filtrar con: 'upcoming' | 'finished' | 'cancelled' (todo minúscula).
+        // Y si la lista viene paginada { count, results }, desanidar 'results'.
+      })
+      .catch(e => {
+        const payload = e?.response?.data
+        console.error('[AuctionDetail][FETCH-LIST][ERROR]', {
+          status: e?.response?.status,
+          payload,
+          message: e?.message
+        })
+      })
+
+    return () => { alive = false }
+  }, [])
 
   const isAuctioned = data?.status === 'auctioned'
 
@@ -85,7 +134,7 @@ export default function AuctionDetail(){
     if (u.startsWith('/')) {
       const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
       const out = base + u
-      if (import.meta.env.DEV) console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
+      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
       return out
     }
     return u
@@ -111,7 +160,7 @@ export default function AuctionDetail(){
     return d.toISOString().slice(0,19) + 'Z'
   }
 
-  // Texto legible si hubieran datos legacy (se mantiene por compatibilidad)
+  // Compat (si hubiera datos legacy en otros entornos)
   const auctionDateText = useMemo(()=> {
     const iso = data?.auctionDate
     if (!iso) return null
@@ -139,7 +188,7 @@ export default function AuctionDetail(){
   }
 
   if (loading) {
-    if (import.meta.env.DEV) console.log('[AuctionDetail] UI loading…')
+    console.log('[AuctionDetail] UI loading…')
     return (
       <section className="section-frame py-16">
         <Skeleton/>
@@ -148,7 +197,7 @@ export default function AuctionDetail(){
   }
 
   if (err) {
-    if (import.meta.env.DEV) console.warn('[AuctionDetail] UI error:', err)
+    console.warn('[AuctionDetail] UI error:', err)
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -161,7 +210,7 @@ export default function AuctionDetail(){
   }
 
   if (!data) {
-    if (import.meta.env.DEV) console.warn('[AuctionDetail] UI sin data (null)')
+    console.warn('[AuctionDetail] UI sin data (null)')
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -176,7 +225,7 @@ export default function AuctionDetail(){
   // Campos defensivos
   const artworkTitle = data.artwork_title || data.title || 'Obra'
   const artistName   = data.artist_name || 'Artista'
-  const status       = data.status || '—'
+  const status       = data.status || '—'   // ← esperado: 'upcoming' | 'finished' | 'cancelled'
   const auctionDate  = data.auction_date ? new Date(data.auction_date) : null
 
   // Guardar nueva fecha de subasta
@@ -187,48 +236,40 @@ export default function AuctionDetail(){
     if (!isoZ) { setSaveErr('Elegí una fecha y hora válidas.'); return }
     setSavingDate(true)
 
-    if (import.meta.env.DEV) {
-      console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/', id, { auction_date: isoZ })
-    }
+    console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/ body=', id, { auction_date: isoZ })
 
     try{
       const { data: updated } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
-      if (import.meta.env.DEV) {
-        console.log('[AuctionDetail][PATCH][OK] updated keys=', updated ? Object.keys(updated) : '(null)')
-        console.log('[AuctionDetail][PATCH][ForFilters]', {
-          id: updated?.id,
-          status: updated?.status,
-          auction_date: updated?.auction_date
-        })
-      }
+      console.log('[AuctionDetail][PATCH][OK] updated keys=', updated ? Object.keys(updated) : '(null)')
+      console.log('[AuctionDetail][PATCH][ForFilters]', {
+        id: updated?.id,
+        status: updated?.status,
+        auction_date: updated?.auction_date
+      })
       setData(updated)
       setAuctionLocal(toLocalInputValue(updated?.auction_date))
       setSaveOk(true)
     }catch(e){
       const payload = e?.response?.data
-      if (import.meta.env.DEV) {
-        console.error('[AuctionDetail][PATCH][ERROR]', {
-          status: e?.response?.status,
-          payload,
-          message: e?.message
-        })
-      }
+      console.error('[AuctionDetail][PATCH][ERROR]', {
+        status: e?.response?.status,
+        payload,
+        message: e?.message
+      })
       setSaveErr(payload?.detail || payload?.auction_date || payload?.message || e?.message || 'No se pudo actualizar la fecha.')
     }finally{
       setSavingDate(false)
     }
   }
 
-  // Log final de lo que se muestra (útil si los filtros de otra vista no reflejan)
-  if (import.meta.env.DEV) {
-    console.log('[AuctionDetail][RENDER]', {
-      id,
-      status,
-      hasImage: !!(data.artwork_image || data.image),
-      auction_date: data.auction_date,
-      auctionLocal
-    })
-  }
+  // Log final de lo que se muestra
+  console.log('[AuctionDetail][RENDER]', {
+    id,
+    status,
+    hasImage: !!(data.artwork_image || data.image),
+    auction_date: data.auction_date,
+    auctionLocal
+  })
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -268,7 +309,9 @@ export default function AuctionDetail(){
                   </div>
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${
-                  status === 'finished' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                  status === 'finished' ? 'bg-emerald-100 text-emerald-700'
+                    : status === 'cancelled' ? 'bg-red-100 text-red-700'
+                    : 'bg-amber-100 text-amber-700'
                 }`}>
                   {status}
                 </span>
