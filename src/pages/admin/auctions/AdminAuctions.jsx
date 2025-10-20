@@ -19,7 +19,9 @@ export default function AdminAuctions(){
     setError(null)
     api.get('/api/v1/auctions/').then(res=>{
       if(!alive) return
-      setAllAuctions(res.data.results || [])
+      const payload = res?.data
+      const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+      setAllAuctions(list || [])
       setLoading(false)
     }).catch(err => {
       if(!alive) return
@@ -30,25 +32,45 @@ export default function AdminAuctions(){
     return ()=>{ alive=false }
   }, [])
 
-  const items = useMemo(() => {
-    console.log(`Recalculating filtered items. Tab: ${tab}, Total auctions: ${allAuctions.length}`);
+  // Helpers de fecha para "hoy" (límites locales del día)
+  function getTodayRange(){
     const now = new Date()
-    const todayStart = new Date(now.setHours(0, 0, 0, 0))
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999))
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    return { start, end }
+  }
 
-    switch (tab) {
-      case 'today':
-        return allAuctions.filter(a => {
-          const startDate = new Date(a.start_date)
-          return startDate >= todayStart && startDate <= todayEnd
-        })
-      case 'upcoming':
-        return allAuctions.filter(a => new Date(a.start_date) > todayEnd)
-      case 'finished':
-        return allAuctions.filter(a => new Date(a.end_date) < todayStart)
-      default:
-        return []
+  // Normaliza URL de imagen (maneja cloudinary url-encoded y rutas relativas)
+  function normalizeImageUrl(u){
+    if (!u || typeof u !== 'string') return u
+    const httpsMarker = 'https%3A/'
+    const httpMarker  = 'http%3A/'
+    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
+    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
+    if (/^https?:\/\//i.test(u)) return u
+    if (u.startsWith('/')) {
+      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
+      return base + u
     }
+    return u
+  }
+
+  const items = useMemo(() => {
+    const { start: todayStart, end: todayEnd } = getTodayRange()
+    // Filtramos por auction_date
+    const parse = (a) => a?.auction_date ? new Date(a.auction_date) : null
+
+    const filtered = allAuctions.filter(a => {
+      const d = parse(a)
+      if (!d || isNaN(d)) return false
+      if (tab === 'today')    return d >= todayStart && d <= todayEnd
+      if (tab === 'upcoming') return d >  todayEnd
+      if (tab === 'finished') return d <  todayStart
+      return false
+    })
+
+    console.log(`Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`)
+    return filtered
   }, [allAuctions, tab])
 
   const handleDeleteAuction = async (id, title) => {
@@ -98,8 +120,8 @@ export default function AdminAuctions(){
           </div>
 
           <div className="mt-6 inline-flex rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <Tab label="Hoy"      active={tab==='today'}    onClick={()=>setTab('today')} />
-            <Tab label="Próximas" active={tab==='upcoming'} onClick={()=>setTab('upcoming')} />
+            <Tab label="Hoy"        active={tab==='today'}    onClick={()=>setTab('today')} />
+            <Tab label="Próximas"   active={tab==='upcoming'} onClick={()=>setTab('upcoming')} />
             <Tab label="Finalizadas" active={tab==='finished'} onClick={()=>setTab('finished')} />
           </div>
         </div>
@@ -120,30 +142,17 @@ export default function AdminAuctions(){
               {items.map(it => (
                 <article key={it.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
                   <img
-                    src={(() => {
-                      let imageUrl = it.artwork_image;
-                      if (typeof imageUrl === 'string') {
-                        const marker = 'https%3A/';
-                        const index = imageUrl.indexOf(marker);
-                        if (index !== -1) {
-                          imageUrl = 'https://' + imageUrl.substring(index + marker.length);
-                        } else if (!imageUrl.startsWith('http')) {
-                          imageUrl = `${api.defaults.baseURL}${imageUrl}`;
-                        }
-                      }
-                      return imageUrl;
-                    })()}
+                    src={normalizeImageUrl(it.artwork_image)}
                     alt={it.artwork_title}
                     className="aspect-[4/3] w-full object-cover"
+                    onError={(e)=>{ e.currentTarget.src='https://via.placeholder.com/800x600?text=Sin+imagen' }}
                   />
                   <div className="p-4 space-y-2">
                     <div className="font-bold line-clamp-1">{it.artwork_title}</div>
                     <div className="text-sm text-slate-600">{it.artist_name}</div>
+
                     <div className="text-xs text-slate-500">
-                      Inicia: {new Date(it.start_date).toLocaleString('es-AR')}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Finaliza: {new Date(it.end_date).toLocaleString('es-AR')}
+                      Fecha de subasta: {it.auction_date ? new Date(it.auction_date).toLocaleString('es-AR') : '—'}
                     </div>
 
                     {tab === 'finished' && (
