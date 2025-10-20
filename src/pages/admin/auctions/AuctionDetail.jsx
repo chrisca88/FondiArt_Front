@@ -13,43 +13,32 @@ export default function AuctionDetail(){
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
 
-  // form ganador (deshabilitado por ahora)
+  // (placeholder no editable por ahora)
   const [finalPrice, setFinalPrice] = useState('')
   const [ok] = useState(false)
+
+  // edición de fecha de subasta
+  const [auctionLocal, setAuctionLocal] = useState('')  // YYYY-MM-DDTHH:mm
+  const [savingDate, setSavingDate] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
+  const [saveOk, setSaveOk] = useState(false)
 
   useEffect(()=> {
     let alive = true
     setLoading(true)
     setErr(null)
 
-    const url = `/api/v1/auctions/${id}/`
-    const base = api?.defaults?.baseURL || '(sin baseURL)'
-    const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
-
-    console.log('[AuctionDetail][useEffect] init →', { id, baseURL: base, url, hasAuth: !!auth })
-
-    api.get(url).then(res => {
+    api.get(`/api/v1/auctions/${id}/`).then(res => {
       if(!alive) return
-      console.log('[AuctionDetail][GET] status=', res?.status, 'data=', res?.data)
-
       const item = res?.data
-      if (!item || typeof item !== 'object') {
-        console.warn('[AuctionDetail] Respuesta sin objeto válido:', item)
-      }
       setData(item || null)
       setFinalPrice(item?.final_price || '')
+      setAuctionLocal(toLocalInputValue(item?.auction_date))
       setLoading(false)
     }).catch(e => {
       if(!alive) return
-      const status = e?.response?.status
       const payload = e?.response?.data
-      console.error('[AuctionDetail][GET][ERROR] status=', status, 'payload=', payload, 'message=', e?.message)
-      setErr(
-        payload?.detail ||
-        payload?.message ||
-        e?.message ||
-        'No se pudo cargar la subasta'
-      )
+      setErr(payload?.detail || payload?.message || e?.message || 'No se pudo cargar la subasta')
       setLoading(false)
     })
 
@@ -58,21 +47,14 @@ export default function AuctionDetail(){
 
   const isAuctioned = data?.status === 'auctioned'
 
-  // Normalizador de URLs de imagen
+  // Normalizador de URLs de imagen (evita prefijos indeseados)
   const normalizeImageUrl = (u) => {
     if (!u || typeof u !== 'string') return ''
     const httpsMarker = 'https%3A/'
     const httpMarker  = 'http%3A/'
-
-    if (u.includes(httpsMarker)) {
-      return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
-    }
-    if (u.includes(httpMarker)) {
-      return 'http://' + u.substring(u.indexOf(httpMarker) + httpMarker.length)
-    }
-    // ya absoluta
+    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
+    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
     if (/^https?:\/\//i.test(u)) return u
-    // relativa -> anteponer baseURL
     if (u.startsWith('/')) {
       const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
       return base + u
@@ -80,7 +62,27 @@ export default function AuctionDetail(){
     return u
   }
 
-  // Fecha legible (si existiera otra fecha legacy)
+  // Helpers fecha (↔ input datetime-local)
+  function toLocalInputValue(iso){
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d)) return ''
+    const pad = n => String(n).padStart(2,'0')
+    const yyyy = d.getFullYear()
+    const mm   = pad(d.getMonth()+1)
+    const dd   = pad(d.getDate())
+    const hh   = pad(d.getHours())
+    const mi   = pad(d.getMinutes())
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
+  }
+  function localToIsoZ(localStr){
+    if (!localStr) return null
+    const d = new Date(localStr)
+    if (isNaN(d)) return null
+    return d.toISOString().slice(0,19) + 'Z'
+  }
+
+  // Texto legible si hubieran datos legacy
   const auctionDateText = useMemo(()=> {
     const iso = data?.auctionDate
     if (!iso) return null
@@ -89,7 +91,6 @@ export default function AuctionDetail(){
     try { return new Date(iso).toLocaleDateString('es-AR') } catch { return String(iso) }
   }, [data?.auctionDate])
 
-  // Permitir cerrar sólo si hoy >= fecha subasta (si se usa ese campo)
   const canCloseToday = useMemo(()=> {
     const iso = String(data?.auctionDate || '')
     if (!iso) return false
@@ -98,7 +99,6 @@ export default function AuctionDetail(){
   }, [data?.auctionDate])
 
   if (user?.role !== 'admin'){
-    console.warn('[AuctionDetail] Usuario sin rol admin. role=', user?.role)
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -110,19 +110,14 @@ export default function AuctionDetail(){
   }
 
   if (loading) {
-    console.log('[AuctionDetail] loading=true')
     return (
       <section className="section-frame py-16">
         <Skeleton/>
-        {import.meta.env.DEV && (
-          <pre className="mt-6 text-xs text-slate-600">[DEBUG] cargando… id: {id}</pre>
-        )}
       </section>
     )
   }
 
   if (err) {
-    console.warn('[AuctionDetail] error UI:', err)
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -130,15 +125,11 @@ export default function AuctionDetail(){
           <p className="text-slate-600 mt-1">{err}</p>
           <div className="mt-4"><Link to="/admin/subastas" className="btn btn-primary">Volver</Link></div>
         </div>
-        {import.meta.env.DEV && (
-          <pre className="mt-6 text-xs text-slate-600">[DEBUG] err: {String(err)}</pre>
-        )}
       </section>
     )
   }
 
   if (!data) {
-    console.warn('[AuctionDetail] data es null/undefined tras cargar.')
     return (
       <section className="section-frame py-16">
         <div className="card-surface p-8 text-center">
@@ -154,8 +145,27 @@ export default function AuctionDetail(){
   const artworkTitle = data.artwork_title || data.title || 'Obra'
   const artistName   = data.artist_name || 'Artista'
   const status       = data.status || '—'
-  const startDate    = data.start_date ? new Date(data.start_date) : null
-  const endDate      = data.end_date   ? new Date(data.end_date)   : null
+  const auctionDate  = data.auction_date ? new Date(data.auction_date) : null
+
+  // Guardar nueva fecha de subasta
+  const onSaveAuctionDate = async () => {
+    setSaveErr('')
+    setSaveOk(false)
+    const isoZ = localToIsoZ(auctionLocal)
+    if (!isoZ) { setSaveErr('Elegí una fecha y hora válidas.'); return }
+    setSavingDate(true)
+    try{
+      const { data: updated } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
+      setData(updated)
+      setAuctionLocal(toLocalInputValue(updated?.auction_date))
+      setSaveOk(true)
+    }catch(e){
+      const payload = e?.response?.data
+      setSaveErr(payload?.detail || payload?.auction_date || payload?.message || e?.message || 'No se pudo actualizar la fecha.')
+    }finally{
+      setSavingDate(false)
+    }
+  }
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -168,13 +178,6 @@ export default function AuctionDetail(){
           <span className="text-slate-700 font-medium">{artworkTitle}</span>
         </div>
 
-        {import.meta.env.DEV && (
-          <details className="rounded-xl border border-slate-200 bg-white/70 p-3">
-            <summary className="cursor-pointer text-sm font-semibold">DEBUG (click para ver)</summary>
-            <pre className="mt-2 text-xs overflow-x-auto">{JSON.stringify({ id, data }, null, 2)}</pre>
-          </details>
-        )}
-
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Imagen */}
           <div className="lg:col-span-3">
@@ -184,28 +187,21 @@ export default function AuctionDetail(){
                 alt={artworkTitle}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
-                onError={(e) => {
-                  console.warn('[AuctionDetail] onError img →', e.currentTarget.src)
-                  e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Sin+imagen'
-                }}
+                onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Sin+imagen' }}
               />
             </div>
           </div>
 
           {/* Panel */}
           <aside className="lg:col-span-2">
-            <div className="card-surface p-6 space-y-5">
+            <div className="card-surface p-6 space-y-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h1 className="text-2xl font-extrabold leading-tight">{artworkTitle}</h1>
                   <p className="text-slate-600">{artistName}</p>
                   <div className="text-sm text-slate-700 mt-1">
-                    <strong>Inicio:</strong>{' '}
-                    {startDate ? startDate.toLocaleString('es-AR') : '—'}
-                  </div>
-                  <div className="text-sm text-slate-700">
-                    <strong>Finaliza:</strong>{' '}
-                    {endDate ? endDate.toLocaleString('es-AR') : '—'}
+                    <strong>Fecha de subasta:</strong>{' '}
+                    {auctionDate ? auctionDate.toLocaleString('es-AR') : '—'}
                   </div>
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${
@@ -215,6 +211,32 @@ export default function AuctionDetail(){
                 </span>
               </div>
 
+              {/* Cambiar fecha de subasta */}
+              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+                <label className="form-label" htmlFor="auctionLocal">Nueva fecha/hora de subasta</label>
+                <input
+                  id="auctionLocal"
+                  type="datetime-local"
+                  className="input"
+                  value={auctionLocal}
+                  onChange={(e)=>setAuctionLocal(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Al guardar, se actualizará el campo <code>auction_date</code>.
+                </p>
+                {saveErr && <div className="text-sm text-red-600 mt-2">{saveErr}</div>}
+                {saveOk &&  <div className="text-sm text-emerald-700 mt-2">¡Fecha de subasta actualizada!</div>}
+                <button
+                  type="button"
+                  className="btn btn-primary w-full mt-3 disabled:opacity-60"
+                  onClick={onSaveAuctionDate}
+                  disabled={savingDate || !auctionLocal}
+                >
+                  {savingDate ? 'Guardando…' : 'Guardar fecha de subasta'}
+                </button>
+              </div>
+
+              {/* Bloque ganador (placeholder, sin cambios) */}
               {status === 'finished' && (
                 <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
                   <div><strong>Ganador:</strong> {data.buyer || '—'}</div>
@@ -248,7 +270,7 @@ export default function AuctionDetail(){
         </div>
       </div>
 
-      {/* Modal éxito (no se usa aún en este flujo) */}
+      {/* Modal éxito (reservado para futuros flujos) */}
       {ok && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
