@@ -32,7 +32,10 @@ export default function AuctionDetail(){
   const [selectedWinner, setSelectedWinner] = useState(null) // { id, name, email, dni }
   const debounceRef = useRef(null)
 
-  // ESTADO para cerrar subasta (¡importante: arriba, antes de returns!)
+  // Datos del ganador cuando la subasta ya está finalizada en el backend
+  const [winnerUser, setWinnerUser] = useState(null) // {id,name,email,dni,avatarUrl}
+
+  // ESTADO para cerrar subasta
   const [closing, setClosing] = useState(false)
   const [closeErr, setCloseErr] = useState('')
   const [closeOk, setCloseOk] = useState(false)
@@ -55,7 +58,7 @@ export default function AuctionDetail(){
       let payload = res?.data
       let list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
 
-      // Asegurar filtrado local SIEMPRE (por si el back ignora ?search=)
+      // Si el back no filtra, traigo todo y filtro local
       if (!Array.isArray(list) || list.length === 0){
         const fallbackUrl = '/api/v1/users/'
         console.log('[AuctionDetail][USERS][FALLBACK] GET', fallbackUrl)
@@ -63,6 +66,7 @@ export default function AuctionDetail(){
         payload = res?.data
         list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
       }
+
       const filtered = (list || []).filter(u =>
         String(u?.name || '').toLowerCase().includes(term)
       ).slice(0, 12)
@@ -170,6 +174,29 @@ export default function AuctionDetail(){
     fetchDetail(alive)
     return ()=> { alive.current = false }
   }, [id])
+
+  // Si viene finalizada, intento traer info del comprador para mostrar DNI
+  useEffect(()=>{
+    async function fetchWinner(){
+      if (!data) return
+      if (data.status !== 'finished') { setWinnerUser(null); return }
+      const buyerId = data?.buyer_id || (typeof data?.buyer === 'number' ? data.buyer : null)
+      if (!buyerId) return
+      try{
+        console.log('[AuctionDetail][WINNER][LOOKUP] GET /api/v1/users/')
+        const res = await api.get('/api/v1/users/')
+        const list = Array.isArray(res?.data?.results) ? res.data.results : (Array.isArray(res?.data) ? res.data : [])
+        const found = list.find(u => Number(u.id) === Number(buyerId))
+        if (found) {
+          setWinnerUser(found)
+          console.log('[AuctionDetail][WINNER][FOUND]', { id: found.id, name: found.name, dni: found.dni })
+        }
+      }catch(e){
+        console.error('[AuctionDetail][WINNER][ERROR]', e?.response?.status, e?.response?.data || e?.message)
+      }
+    }
+    fetchWinner()
+  }, [data])
 
   // --- FETCH de LISTADO (solo para LOGS de filtros) ---
   useEffect(()=> {
@@ -314,7 +341,7 @@ export default function AuctionDetail(){
     }
   }
 
-  // Cerrar subasta (enviar ganador y precio)
+  // Cerrar subasta (enviar ganador y precio + status finished)
   async function onCloseAuction(){
     setCloseErr('')
     setCloseOk(false)
@@ -330,6 +357,7 @@ export default function AuctionDetail(){
     const payload = {
       buyer: selectedWinner.id,
       final_price: priceNumber.toFixed(2),
+      status: 'finished',
     }
     console.log('[AuctionDetail][CLOSE_AUCTION][PATCH] /api/v1/auctions/%s/ body=', id, payload)
     setClosing(true)
@@ -339,8 +367,9 @@ export default function AuctionDetail(){
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
       setCloseOk(true)
 
-      // Re-fetch para objeto completo y estado actualizado (posible status=finished)
+      // Re-fetch para objeto completo y estado actualizado
       await fetchDetail({ current: true })
+      setWinnerUser(selectedWinner) // reflejo inmediato del ganador con DNI
     }catch(e){
       const p = e?.response?.data
       console.error('[AuctionDetail][CLOSE_AUCTION][ERROR]', e?.response?.status, p || e?.message)
@@ -357,7 +386,8 @@ export default function AuctionDetail(){
     hasImage: !!(data.artwork_image || data.image),
     auction_date: data.auction_date,
     auctionLocal,
-    selectedWinner
+    selectedWinner,
+    winnerUser
   })
 
   return (
@@ -416,9 +446,6 @@ export default function AuctionDetail(){
                   value={auctionLocal}
                   onChange={(e)=>setAuctionLocal(e.target.value)}
                 />
-                <p className="mt-1 text-xs text-slate-500">
-                  Al guardar, se actualizará el campo <code>auction_date</code>.
-                </p>
                 {saveErr && <div className="text-sm text-red-600 mt-2">{saveErr}</div>}
                 {saveOk &&  <div className="text-sm text-emerald-700 mt-2">¡Fecha de subasta actualizada!</div>}
                 <button
@@ -431,7 +458,7 @@ export default function AuctionDetail(){
                 </button>
               </div>
 
-              {/* Ganador: selector por búsqueda */}
+              {/* Ganador: selector por búsqueda (solo si NO está finalizada) */}
               {status !== 'finished' && (
                 <>
                   <div>
@@ -481,9 +508,6 @@ export default function AuctionDetail(){
                         </span>
                       </div>
                     )}
-                    <p className="text-xs text-slate-500 mt-1">
-                      Se enviará el <code>id</code> del usuario ganador al cerrar la subasta.
-                    </p>
                   </div>
 
                   <div>
@@ -511,10 +535,21 @@ export default function AuctionDetail(){
                 </>
               )}
 
+              {/* Bloque resumen para finalizadas */}
               {status === 'finished' && (
                 <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
-                  <div><strong>Ganador:</strong> {data.buyer || (selectedWinner?.name ?? '—')}</div>
-                  <div><strong>Precio final:</strong> ${Number(data.final_price||finalPrice||0).toLocaleString('es-AR')}</div>
+                  <div>
+                    <strong>Ganador:</strong>{' '}
+                    {winnerUser?.name || selectedWinner?.name || data.buyer || '—'}
+                    {' '}
+                    {winnerUser?.dni || selectedWinner?.dni
+                      ? <span className="text-emerald-800">(DNI: {winnerUser?.dni || selectedWinner?.dni})</span>
+                      : null}
+                  </div>
+                  <div>
+                    <strong>Precio final:</strong>{' '}
+                    ${Number(data.final_price||finalPrice||0).toLocaleString('es-AR')}
+                  </div>
                 </div>
               )}
 
