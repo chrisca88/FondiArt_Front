@@ -1,5 +1,5 @@
 // src/pages/admin/auctions/AuctionDetail.jsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../../../utils/api.js'
@@ -22,6 +22,60 @@ export default function AuctionDetail(){
   const [savingDate, setSavingDate] = useState(false)
   const [saveErr, setSaveErr] = useState('')
   const [saveOk, setSaveOk] = useState(false)
+
+  // ---------- BUSCADOR DE USUARIOS (GANADOR) ----------
+  const [userQuery, setUserQuery] = useState('')
+  const [userResults, setUserResults] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersErr, setUsersErr] = useState('')
+  const [selectedWinner, setSelectedWinner] = useState(null) // { id, name, email }
+  const debounceRef = useRef(null)
+
+  async function searchUsers(q){
+    if (!q || q.trim().length < 2){
+      setUserResults([])
+      setUsersErr('')
+      return
+    }
+    setUsersLoading(true)
+    setUsersErr('')
+    try{
+      // 1) Intento con query server-side (?search=)
+      const withSearch = `/api/v1/users/?search=${encodeURIComponent(q.trim())}`
+      console.log('[AuctionDetail][USERS][GET]', withSearch)
+      let res = await api.get(withSearch)
+
+      // si el back no soporta search y devuelve 404/400, lo tratamos en catch
+      let payload = res?.data
+      let list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+      // 2) Si vino todo sin search o vino vacío, intento sin filtro y filtro en cliente
+      if (!Array.isArray(list) || list.length === 0){
+        const fallbackUrl = '/api/v1/users/'
+        console.log('[AuctionDetail][USERS][FALLBACK] GET', fallbackUrl)
+        res = await api.get(fallbackUrl)
+        payload = res?.data
+        const all = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+        list = all.filter(u => String(u?.name || '').toLowerCase().includes(q.trim().toLowerCase()))
+      }
+
+      console.log('[AuctionDetail][USERS][OK] total=', list.length, 'sample=', list.slice(0,3))
+      setUserResults(list)
+    }catch(e){
+      console.error('[AuctionDetail][USERS][ERROR]', e?.response?.status, e?.response?.data || e?.message)
+      setUsersErr('No se pudieron cargar usuarios.')
+      setUserResults([])
+    }finally{
+      setUsersLoading(false)
+    }
+  }
+
+  // debounce al tipear
+  useEffect(()=>{
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(()=> searchUsers(userQuery), 300)
+    return ()=> clearTimeout(debounceRef.current)
+  }, [userQuery])
+  // -----------------------------------------------------
 
   // --- helpers fecha ---
   function toLocalInputValue(iso){
@@ -76,7 +130,7 @@ export default function AuctionDetail(){
       console.log('[AuctionDetail][FETCH-DETAIL][DATA] keys=', item ? Object.keys(item) : '(null)')
       console.log('[AuctionDetail][FETCH-DETAIL][ForFilters]', {
         id: item?.id,
-        status: item?.status,           // ← backend: 'upcoming' | 'finished' | 'cancelled'
+        status: item?.status,           // 'upcoming' | 'finished' | 'cancelled'
         auction_date: item?.auction_date,
         artwork_title: item?.artwork_title,
         artist_name: item?.artist_name
@@ -85,6 +139,10 @@ export default function AuctionDetail(){
       setData(item || null)
       setFinalPrice(item?.final_price || '')
       setAuctionLocal(toLocalInputValue(item?.auction_date))
+
+      // si la subasta ya tuviera buyer, podrías precargarlo como seleccionado (opcional)
+      // setSelectedWinner(item?.buyer ? { id: item.buyer_id, name: item.buyer, email: '' } : null)
+
       setLoading(false)
     } catch (e) {
       if (!aliveRef.current) return
@@ -119,14 +177,11 @@ export default function AuctionDetail(){
         if (!alive) return
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-        const total   = typeof payload?.count === 'number' ? payload.count : results.length
-
         const buckets = results.reduce((acc, x) => {
           const k = (x?.status ?? '(sin status)')
           acc[k] = (acc[k] || 0) + 1
           return acc
         }, {})
-
         console.log('[AuctionDetail][FETCH-LIST][OK]', {
           httpStatus: res?.status,
           total_from_count: payload?.count,
@@ -134,16 +189,6 @@ export default function AuctionDetail(){
           buckets_by_status: buckets,
           expected_statuses: ['upcoming', 'finished', 'cancelled']
         })
-
-        console.log('[AuctionDetail][FETCH-LIST][SAMPLE first 5]',
-          results.slice(0,5).map(r => ({
-            id: r?.id,
-            status: r?.status,
-            auction_date: r?.auction_date,
-            artwork_title: r?.artwork_title,
-            artist_name: r?.artist_name
-          }))
-        )
       })
       .catch(e => {
         const payload = e?.response?.data
@@ -224,7 +269,7 @@ export default function AuctionDetail(){
   // Campos defensivos
   const artworkTitle = data.artwork_title || data.title || 'Obra'
   const artistName   = data.artist_name || 'Artista'
-  const status       = data.status || '—'   // ← esperado: 'upcoming' | 'finished' | 'cancelled'
+  const status       = data.status || '—'   // 'upcoming' | 'finished' | 'cancelled'
   const auctionDate  = data.auction_date ? new Date(data.auction_date) : null
 
   // Guardar nueva fecha de subasta (FIX: merge + refetch)
@@ -238,15 +283,13 @@ export default function AuctionDetail(){
     console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/ body=', id, { auction_date: isoZ })
 
     try{
-      // Muchos backends devuelven un objeto PARCIAL en PATCH (solo campos modificados).
-      // 1) Mergeamos para no perder título/imagen/etc.
       const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
       console.log('[AuctionDetail][PATCH][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
       setAuctionLocal(toLocalInputValue((updatedPartial && updatedPartial.auction_date) || (data && data.auction_date)))
       setSaveOk(true)
 
-      // 2) Re-fetch inmediato para tener el objeto COMPLETO y evitar placeholders
+      // Re-fetch para garantizar objeto completo
       setTimeout(() => {
         let aliveRef = { current: true }
         fetchDetail(aliveRef)
@@ -264,13 +307,14 @@ export default function AuctionDetail(){
     }
   }
 
-  // Log final de lo que se muestra
+  // Log final
   console.log('[AuctionDetail][RENDER]', {
     id,
     status,
     hasImage: !!(data.artwork_image || data.image),
     auction_date: data.auction_date,
-    auctionLocal
+    auctionLocal,
+    selectedWinner
   })
 
   return (
@@ -344,32 +388,86 @@ export default function AuctionDetail(){
                 </button>
               </div>
 
-              {/* Bloque ganador (placeholder, sin cambios) */}
-              {status === 'finished' && (
-                <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
-                  <div><strong>Ganador:</strong> {data.buyer || '—'}</div>
-                  <div><strong>Precio final:</strong> ${Number(data.final_price||0).toLocaleString('es-AR')}</div>
-                </div>
-              )}
-
+              {/* Ganador: selector por búsqueda */}
               {status !== 'finished' && (
                 <>
                   <div>
-                    <label className="form-label">Nombre del ganador</label>
-                    <input className="input" placeholder="Nombre y apellido" />
+                    <label className="form-label" htmlFor="winnerSearch">Buscar ganador (usuario)</label>
+                    <input
+                      id="winnerSearch"
+                      className="input"
+                      placeholder="Escribí al menos 2 letras del nombre…"
+                      value={userQuery}
+                      onChange={(e)=>{ setUserQuery(e.target.value); setSelectedWinner(null) }}
+                    />
+                    {usersLoading && <div className="text-xs text-slate-500 mt-1">Buscando usuarios…</div>}
+                    {usersErr && <div className="text-sm text-red-600 mt-1">{usersErr}</div>}
+
+                    {/* Resultados */}
+                    {userResults.length > 0 && (
+                      <ul className="mt-2 max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white/90 divide-y">
+                        {userResults.map(u => (
+                          <li
+                            key={u.id}
+                            className="px-3 py-2 cursor-pointer hover:bg-slate-50 flex items-center gap-3"
+                            onClick={()=>{ setSelectedWinner({ id: u.id, name: u.name, email: u.email }); setUserQuery(u.name); setUserResults([]) }}
+                          >
+                            <img
+                              src={u.avatarUrl || 'https://via.placeholder.com/32?text=U'}
+                              alt={u.name}
+                              className="h-8 w-8 rounded-full object-cover"
+                              onError={(e)=>{ e.currentTarget.src='https://via.placeholder.com/32?text=U' }}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{u.name}</div>
+                              <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Selección */}
+                    {selectedWinner && (
+                      <div className="mt-2 text-sm text-emerald-700">
+                        Seleccionado: <strong>{selectedWinner.name}</strong> <span className="text-slate-500">({selectedWinner.id})</span>
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1">
+                      Guardaremos el <code>id</code> del usuario ganador cuando implementemos el cierre de subasta.
+                    </p>
                   </div>
-                  <div>
-                    <label className="form-label">DNI</label>
-                    <input className="input" placeholder="Documento" />
-                  </div>
+
                   <div>
                     <label className="form-label">Precio final de subasta (ARS)</label>
-                    <input type="number" className="input" min={0} placeholder="Ej. 150000" />
+                    <input
+                      type="number"
+                      className="input"
+                      min={0}
+                      placeholder="Ej. 150000"
+                      value={finalPrice}
+                      onChange={(e)=>setFinalPrice(e.target.value)}
+                    />
                   </div>
-                  <button className="btn btn-primary w-full">
+                  <button className="btn btn-primary w-full" onClick={()=>{
+                    console.log('[AuctionDetail][CLOSE_AUCTION][PENDING_IMPL]', {
+                      auction_id: id,
+                      winner_user_id: selectedWinner?.id,
+                      winner_name: selectedWinner?.name,
+                      final_price: finalPrice
+                    })
+                    alert('Acción de cierre pendiente de implementación en el backend.\nRevisa la consola para ver el payload que se enviaría.')
+                  }}>
                     Marcar como subastada
                   </button>
                 </>
+              )}
+
+              {status === 'finished' && (
+                <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
+                  <div><strong>Ganador:</strong> {data.buyer || (selectedWinner?.name ?? '—')}</div>
+                  <div><strong>Precio final:</strong> ${Number(data.final_price||finalPrice||0).toLocaleString('es-AR')}</div>
+                </div>
               )}
 
               <Link to="/admin/subastas" className="btn btn-outline w-full">Volver</Link>
