@@ -23,23 +23,7 @@ export default function AuctionDetail(){
   const [saveErr, setSaveErr] = useState('')
   const [saveOk, setSaveOk] = useState(false)
 
-  // ---------- helpers ----------
-  const normalizeImageUrl = (u) => {
-    if (!u || typeof u !== 'string') return ''
-    const httpsMarker = 'https%3A/'
-    const httpMarker  = 'http%3A/'
-    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
-    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
-    if (/^https?:\/\//i.test(u)) return u
-    if (u.startsWith('/')) {
-      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
-      const out = base + u
-      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
-      return out
-    }
-    return u
-  }
-
+  // --- helpers fecha ---
   function toLocalInputValue(iso){
     if (!iso) return ''
     const d = new Date(iso)
@@ -59,7 +43,24 @@ export default function AuctionDetail(){
     return d.toISOString().slice(0,19) + 'Z'
   }
 
-  // ---------- fetch detail (reusable) ----------
+  // Normalizador de URLs de imagen (evita prefijos indeseados)
+  const normalizeImageUrl = (u) => {
+    if (!u || typeof u !== 'string') return ''
+    const httpsMarker = 'https%3A/'
+    const httpMarker  = 'http%3A/'
+    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
+    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
+    if (/^https?:\/\//i.test(u)) return u
+    if (u.startsWith('/')) {
+      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
+      const out = base + u
+      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
+      return out
+    }
+    return u
+  }
+
+  // --- función reutilizable para obtener el detalle ---
   async function fetchDetail(aliveRef = { current: true }) {
     const endpoint = `/api/v1/auctions/${id}/`
     const base = api?.defaults?.baseURL
@@ -75,7 +76,7 @@ export default function AuctionDetail(){
       console.log('[AuctionDetail][FETCH-DETAIL][DATA] keys=', item ? Object.keys(item) : '(null)')
       console.log('[AuctionDetail][FETCH-DETAIL][ForFilters]', {
         id: item?.id,
-        status: item?.status,           // 'upcoming' | 'finished' | 'cancelled'
+        status: item?.status,           // ← backend: 'upcoming' | 'finished' | 'cancelled'
         auction_date: item?.auction_date,
         artwork_title: item?.artwork_title,
         artist_name: item?.artist_name
@@ -107,7 +108,7 @@ export default function AuctionDetail(){
     return ()=> { alive.current = false }
   }, [id])
 
-  // --- FETCH de LISTADO (solo para LOGS de filtros globales) ---
+  // --- FETCH de LISTADO (solo para LOGS de filtros) ---
   useEffect(()=> {
     let alive = true
     const listEndpoint = '/api/v1/auctions/'
@@ -118,6 +119,8 @@ export default function AuctionDetail(){
         if (!alive) return
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+        const total   = typeof payload?.count === 'number' ? payload.count : results.length
+
         const buckets = results.reduce((acc, x) => {
           const k = (x?.status ?? '(sin status)')
           acc[k] = (acc[k] || 0) + 1
@@ -218,13 +221,13 @@ export default function AuctionDetail(){
     )
   }
 
-  // Campos defensivos (si el PATCH devolviera parcial, seguimos mostrando del estado previo)
+  // Campos defensivos
   const artworkTitle = data.artwork_title || data.title || 'Obra'
   const artistName   = data.artist_name || 'Artista'
-  const status       = data.status || '—'   // 'upcoming' | 'finished' | 'cancelled'
+  const status       = data.status || '—'   // ← esperado: 'upcoming' | 'finished' | 'cancelled'
   const auctionDate  = data.auction_date ? new Date(data.auction_date) : null
 
-  // Guardar nueva fecha de subasta
+  // Guardar nueva fecha de subasta (FIX: merge + refetch)
   const onSaveAuctionDate = async () => {
     setSaveErr('')
     setSaveOk(false)
@@ -235,21 +238,18 @@ export default function AuctionDetail(){
     console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/ body=', id, { auction_date: isoZ })
 
     try{
-      // Nota: muchos backends devuelven SOLO los campos modificados en PATCH.
-      // Por eso MERGEAMOS y luego re-consultamos el detalle para evitar perder título/imagen/etc.
+      // Muchos backends devuelven un objeto PARCIAL en PATCH (solo campos modificados).
+      // 1) Mergeamos para no perder título/imagen/etc.
       const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
       console.log('[AuctionDetail][PATCH][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
-
-      // 1) Merge defensivo (no perdemos campos previos)
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
       setAuctionLocal(toLocalInputValue((updatedPartial && updatedPartial.auction_date) || (data && data.auction_date)))
       setSaveOk(true)
 
-      // 2) Refetch de detalle COMPLETO para sincronizar todo (evita placeholders)
+      // 2) Re-fetch inmediato para tener el objeto COMPLETO y evitar placeholders
       setTimeout(() => {
         let aliveRef = { current: true }
         fetchDetail(aliveRef)
-        // no guardamos aliveRef, este refetch es inmediato; si el componente se desmonta, el effect principal maneja su propio alive
       }, 0)
     }catch(e){
       const payload = e?.response?.data
@@ -356,18 +356,18 @@ export default function AuctionDetail(){
                 <>
                   <div>
                     <label className="form-label">Nombre del ganador</label>
-                    <input className="input" placeholder="Nombre y apellido" disabled />
+                    <input className="input" placeholder="Nombre y apellido" />
                   </div>
                   <div>
                     <label className="form-label">DNI</label>
-                    <input className="input" placeholder="Documento" disabled />
+                    <input className="input" placeholder="Documento" />
                   </div>
                   <div>
                     <label className="form-label">Precio final de subasta (ARS)</label>
-                    <input type="number" className="input" min={0} placeholder="Ej. 150000" disabled />
+                    <input type="number" className="input" min={0} placeholder="Ej. 150000" />
                   </div>
-                  <button className="btn btn-primary w-full" disabled>
-                    Marcar como subastada (Próximamente)
+                  <button className="btn btn-primary w-full">
+                    Marcar como subastada
                   </button>
                 </>
               )}
