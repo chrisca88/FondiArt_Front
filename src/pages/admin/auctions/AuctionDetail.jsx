@@ -28,11 +28,12 @@ export default function AuctionDetail(){
   const [userResults, setUserResults] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersErr, setUsersErr] = useState('')
-  const [selectedWinner, setSelectedWinner] = useState(null) // { id, name, email }
+  const [selectedWinner, setSelectedWinner] = useState(null) // { id, name, email, dni }
   const debounceRef = useRef(null)
 
   async function searchUsers(q){
-    if (!q || q.trim().length < 2){
+    const term = (q || '').trim().toLowerCase()
+    if (term.length < 2){
       setUserResults([])
       setUsersErr('')
       return
@@ -40,26 +41,27 @@ export default function AuctionDetail(){
     setUsersLoading(true)
     setUsersErr('')
     try{
-      // 1) Intento con query server-side (?search=)
-      const withSearch = `/api/v1/users/?search=${encodeURIComponent(q.trim())}`
+      // Intento server-side search
+      const withSearch = `/api/v1/users/?search=${encodeURIComponent(term)}`
       console.log('[AuctionDetail][USERS][GET]', withSearch)
       let res = await api.get(withSearch)
-
-      // si el back no soporta search y devuelve 404/400, lo tratamos en catch
       let payload = res?.data
       let list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-      // 2) Si vino todo sin search o vino vacío, intento sin filtro y filtro en cliente
+
+      // Asegurar filtrado local SIEMPRE (por si el back ignora ?search=)
       if (!Array.isArray(list) || list.length === 0){
         const fallbackUrl = '/api/v1/users/'
         console.log('[AuctionDetail][USERS][FALLBACK] GET', fallbackUrl)
         res = await api.get(fallbackUrl)
         payload = res?.data
-        const all = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-        list = all.filter(u => String(u?.name || '').toLowerCase().includes(q.trim().toLowerCase()))
+        list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
       }
+      const filtered = (list || []).filter(u =>
+        String(u?.name || '').toLowerCase().includes(term)
+      ).slice(0, 12)
 
-      console.log('[AuctionDetail][USERS][OK] total=', list.length, 'sample=', list.slice(0,3))
-      setUserResults(list)
+      console.log('[AuctionDetail][USERS][OK] total=', filtered.length, 'sample=', filtered.slice(0,3))
+      setUserResults(filtered)
     }catch(e){
       console.error('[AuctionDetail][USERS][ERROR]', e?.response?.status, e?.response?.data || e?.message)
       setUsersErr('No se pudieron cargar usuarios.')
@@ -140,8 +142,7 @@ export default function AuctionDetail(){
       setFinalPrice(item?.final_price || '')
       setAuctionLocal(toLocalInputValue(item?.auction_date))
 
-      // si la subasta ya tuviera buyer, podrías precargarlo como seleccionado (opcional)
-      // setSelectedWinner(item?.buyer ? { id: item.buyer_id, name: item.buyer, email: '' } : null)
+      // Si ya tiene ganador en el back y viene su dni/nombre, podrías mapearlo aquí.
 
       setLoading(false)
     } catch (e) {
@@ -307,6 +308,46 @@ export default function AuctionDetail(){
     }
   }
 
+  // Cerrar subasta (enviar ganador y precio)
+  const [closing, setClosing] = useState(false)
+  const [closeErr, setCloseErr] = useState('')
+  const [closeOk, setCloseOk] = useState(false)
+
+  async function onCloseAuction(){
+    setCloseErr('')
+    setCloseOk(false)
+    if (!selectedWinner?.id){
+      setCloseErr('Seleccioná un usuario ganador.')
+      return
+    }
+    const priceNumber = Number(finalPrice)
+    if (!isFinite(priceNumber) || priceNumber <= 0){
+      setCloseErr('Ingresá un precio final válido.')
+      return
+    }
+    const payload = {
+      buyer: selectedWinner.id,
+      final_price: priceNumber.toFixed(2),
+    }
+    console.log('[AuctionDetail][CLOSE_AUCTION][PATCH] /api/v1/auctions/%s/ body=', id, payload)
+    setClosing(true)
+    try{
+      const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, payload)
+      console.log('[AuctionDetail][CLOSE_AUCTION][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
+      setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
+      setCloseOk(true)
+
+      // Re-fetch para objeto completo y estado actualizado (posible status=finished)
+      await fetchDetail({ current: true })
+    }catch(e){
+      const p = e?.response?.data
+      console.error('[AuctionDetail][CLOSE_AUCTION][ERROR]', e?.response?.status, p || e?.message)
+      setCloseErr(p?.detail || p?.message || e?.message || 'No se pudo cerrar la subasta.')
+    }finally{
+      setClosing(false)
+    }
+  }
+
   // Log final
   console.log('[AuctionDetail][RENDER]', {
     id,
@@ -410,7 +451,7 @@ export default function AuctionDetail(){
                           <li
                             key={u.id}
                             className="px-3 py-2 cursor-pointer hover:bg-slate-50 flex items-center gap-3"
-                            onClick={()=>{ setSelectedWinner({ id: u.id, name: u.name, email: u.email }); setUserQuery(u.name); setUserResults([]) }}
+                            onClick={()=>{ setSelectedWinner({ id: u.id, name: u.name, email: u.email, dni: u.dni }); setUserQuery(u.name); setUserResults([]) }}
                           >
                             <img
                               src={u.avatarUrl || 'https://via.placeholder.com/32?text=U'}
@@ -419,7 +460,9 @@ export default function AuctionDetail(){
                               onError={(e)=>{ e.currentTarget.src='https://via.placeholder.com/32?text=U' }}
                             />
                             <div className="min-w-0">
-                              <div className="text-sm font-medium truncate">{u.name}</div>
+                              <div className="text-sm font-medium truncate">
+                                {u.name} {u.dni ? <span className="text-xs text-slate-500">(DNI: {u.dni})</span> : null}
+                              </div>
                               <div className="text-xs text-slate-500 truncate">{u.email}</div>
                             </div>
                           </li>
@@ -430,11 +473,14 @@ export default function AuctionDetail(){
                     {/* Selección */}
                     {selectedWinner && (
                       <div className="mt-2 text-sm text-emerald-700">
-                        Seleccionado: <strong>{selectedWinner.name}</strong> <span className="text-slate-500">({selectedWinner.id})</span>
+                        Seleccionado: <strong>{selectedWinner.name}</strong>{' '}
+                        <span className="text-slate-500">
+                          {selectedWinner.dni ? `(DNI: ${selectedWinner.dni})` : ''}
+                        </span>
                       </div>
                     )}
                     <p className="text-xs text-slate-500 mt-1">
-                      Guardaremos el <code>id</code> del usuario ganador cuando implementemos el cierre de subasta.
+                      Se enviará el <code>id</code> del usuario ganador al cerrar la subasta.
                     </p>
                   </div>
 
@@ -449,16 +495,16 @@ export default function AuctionDetail(){
                       onChange={(e)=>setFinalPrice(e.target.value)}
                     />
                   </div>
-                  <button className="btn btn-primary w-full" onClick={()=>{
-                    console.log('[AuctionDetail][CLOSE_AUCTION][PENDING_IMPL]', {
-                      auction_id: id,
-                      winner_user_id: selectedWinner?.id,
-                      winner_name: selectedWinner?.name,
-                      final_price: finalPrice
-                    })
-                    alert('Acción de cierre pendiente de implementación en el backend.\nRevisa la consola para ver el payload que se enviaría.')
-                  }}>
-                    Marcar como subastada
+
+                  {closeErr && <div className="text-sm text-red-600">{closeErr}</div>}
+                  {closeOk  && <div className="text-sm text-emerald-700">¡Subasta marcada como finalizada!</div>}
+
+                  <button
+                    className="btn btn-primary w-full disabled:opacity-60"
+                    disabled={closing}
+                    onClick={onCloseAuction}
+                  >
+                    {closing ? 'Guardando…' : 'Marcar como subastada'}
                   </button>
                 </>
               )}
