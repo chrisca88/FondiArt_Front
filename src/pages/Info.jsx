@@ -1,4 +1,8 @@
+import { useSelector } from 'react-redux'
+
 export default function Info(){
+  const user = useSelector(s => s.auth.user) // si hay usuario logueado
+
   return (
     <div className="relative section-frame">
       {/* Halo decorativo */}
@@ -44,7 +48,7 @@ export default function Info(){
         </div>
 
         <div className="mt-10 flex flex-wrap gap-3">
-          <a href="/register" className="btn btn-primary">Crear cuenta</a>
+          {!user && <a href="/register" className="btn btn-primary">Crear cuenta</a>}
           <a href="/#faq" className="btn btn-outline">Preguntas frecuentes</a>
         </div>
       </div>
@@ -58,7 +62,8 @@ function Feature({ title, desc }) {
   return (
     <li className="flex gap-3">
       <span className="mt-1 inline-flex h-6 w-6 items-center justify-center rounded-full
-                       bg-indigo-600 text-white shadow-sm"> {/* check icon */}
+                       bg-indigo-600 text-white shadow-sm">
+        {/* check icon */}
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3">
           <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
