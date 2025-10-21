@@ -23,26 +23,59 @@ export default function AuctionDetail(){
   const [saveErr, setSaveErr] = useState('')
   const [saveOk, setSaveOk] = useState(false)
 
-  // --- FETCH de DETALLE ---
-  useEffect(()=> {
-    let alive = true
-    setLoading(true)
-    setErr(null)
+  // ---------- helpers ----------
+  const normalizeImageUrl = (u) => {
+    if (!u || typeof u !== 'string') return ''
+    const httpsMarker = 'https%3A/'
+    const httpMarker  = 'http%3A/'
+    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
+    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
+    if (/^https?:\/\//i.test(u)) return u
+    if (u.startsWith('/')) {
+      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
+      const out = base + u
+      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
+      return out
+    }
+    return u
+  }
 
+  function toLocalInputValue(iso){
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d)) return ''
+    const pad = n => String(n).padStart(2,'0')
+    const yyyy = d.getFullYear()
+    const mm   = pad(d.getMonth()+1)
+    const dd   = pad(d.getDate())
+    const hh   = pad(d.getHours())
+    const mi   = pad(d.getMinutes())
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
+  }
+  function localToIsoZ(localStr){
+    if (!localStr) return null
+    const d = new Date(localStr)
+    if (isNaN(d)) return null
+    return d.toISOString().slice(0,19) + 'Z'
+  }
+
+  // ---------- fetch detail (reusable) ----------
+  async function fetchDetail(aliveRef = { current: true }) {
     const endpoint = `/api/v1/auctions/${id}/`
     const base = api?.defaults?.baseURL
     const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
     console.log('[AuctionDetail][FETCH-DETAIL] GET', { endpoint, baseURL: base, hasAuth: !!auth, id })
 
-    api.get(endpoint).then(res => {
-      if(!alive) return
+    try {
+      const res = await api.get(endpoint)
+      if (!aliveRef.current) return
       const item = res?.data
 
       console.log('[AuctionDetail][FETCH-DETAIL][OK] status=', res?.status)
       console.log('[AuctionDetail][FETCH-DETAIL][DATA] keys=', item ? Object.keys(item) : '(null)')
       console.log('[AuctionDetail][FETCH-DETAIL][ForFilters]', {
         id: item?.id,
-        status: item?.status,           // ← backend: 'upcoming' | 'finished' | 'cancelled'
+        status: item?.status,           // 'upcoming' | 'finished' | 'cancelled'
         auction_date: item?.auction_date,
         artwork_title: item?.artwork_title,
         artist_name: item?.artist_name
@@ -52,8 +85,8 @@ export default function AuctionDetail(){
       setFinalPrice(item?.final_price || '')
       setAuctionLocal(toLocalInputValue(item?.auction_date))
       setLoading(false)
-    }).catch(e => {
-      if(!alive) return
+    } catch (e) {
+      if (!aliveRef.current) return
       const payload = e?.response?.data
       console.error('[AuctionDetail][FETCH-DETAIL][ERROR]', {
         status: e?.response?.status,
@@ -62,12 +95,19 @@ export default function AuctionDetail(){
       })
       setErr(payload?.detail || payload?.message || e?.message || 'No se pudo cargar la subasta')
       setLoading(false)
-    })
+    }
+  }
 
-    return ()=> { alive=false }
+  // --- FETCH de DETALLE ---
+  useEffect(()=> {
+    let alive = { current: true }
+    setLoading(true)
+    setErr(null)
+    fetchDetail(alive)
+    return ()=> { alive.current = false }
   }, [id])
 
-  // --- FETCH de LISTADO (solo para LOGS de filtros) ---
+  // --- FETCH de LISTADO (solo para LOGS de filtros globales) ---
   useEffect(()=> {
     let alive = true
     const listEndpoint = '/api/v1/auctions/'
@@ -78,9 +118,6 @@ export default function AuctionDetail(){
         if (!alive) return
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-        const total   = typeof payload?.count === 'number' ? payload.count : results.length
-
-        // resumen por status (backend válidos: 'upcoming', 'finished', 'cancelled')
         const buckets = results.reduce((acc, x) => {
           const k = (x?.status ?? '(sin status)')
           acc[k] = (acc[k] || 0) + 1
@@ -104,10 +141,6 @@ export default function AuctionDetail(){
             artist_name: r?.artist_name
           }))
         )
-
-        // Si tus filtros esperan 'active' o 'Upcoming' (capitalizado), NO van a matchear.
-        // Asegurate de filtrar con: 'upcoming' | 'finished' | 'cancelled' (todo minúscula).
-        // Y si la lista viene paginada { count, results }, desanidar 'results'.
       })
       .catch(e => {
         const payload = e?.response?.data
@@ -122,43 +155,6 @@ export default function AuctionDetail(){
   }, [])
 
   const isAuctioned = data?.status === 'auctioned'
-
-  // Normalizador de URLs de imagen (evita prefijos indeseados)
-  const normalizeImageUrl = (u) => {
-    if (!u || typeof u !== 'string') return ''
-    const httpsMarker = 'https%3A/'
-    const httpMarker  = 'http%3A/'
-    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
-    if (u.includes(httpMarker))  return 'http://'  + u.substring(u.indexOf(httpMarker) + httpMarker.length)
-    if (/^https?:\/\//i.test(u)) return u
-    if (u.startsWith('/')) {
-      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
-      const out = base + u
-      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
-      return out
-    }
-    return u
-  }
-
-  // Helpers fecha (↔ input datetime-local)
-  function toLocalInputValue(iso){
-    if (!iso) return ''
-    const d = new Date(iso)
-    if (isNaN(d)) return ''
-    const pad = n => String(n).padStart(2,'0')
-    const yyyy = d.getFullYear()
-    const mm   = pad(d.getMonth()+1)
-    const dd   = pad(d.getDate())
-    const hh   = pad(d.getHours())
-    const mi   = pad(d.getMinutes())
-    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
-  }
-  function localToIsoZ(localStr){
-    if (!localStr) return null
-    const d = new Date(localStr)
-    if (isNaN(d)) return null
-    return d.toISOString().slice(0,19) + 'Z'
-  }
 
   // Compat (si hubiera datos legacy en otros entornos)
   const auctionDateText = useMemo(()=> {
@@ -222,10 +218,10 @@ export default function AuctionDetail(){
     )
   }
 
-  // Campos defensivos
+  // Campos defensivos (si el PATCH devolviera parcial, seguimos mostrando del estado previo)
   const artworkTitle = data.artwork_title || data.title || 'Obra'
   const artistName   = data.artist_name || 'Artista'
-  const status       = data.status || '—'   // ← esperado: 'upcoming' | 'finished' | 'cancelled'
+  const status       = data.status || '—'   // 'upcoming' | 'finished' | 'cancelled'
   const auctionDate  = data.auction_date ? new Date(data.auction_date) : null
 
   // Guardar nueva fecha de subasta
@@ -239,16 +235,22 @@ export default function AuctionDetail(){
     console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/ body=', id, { auction_date: isoZ })
 
     try{
-      const { data: updated } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
-      console.log('[AuctionDetail][PATCH][OK] updated keys=', updated ? Object.keys(updated) : '(null)')
-      console.log('[AuctionDetail][PATCH][ForFilters]', {
-        id: updated?.id,
-        status: updated?.status,
-        auction_date: updated?.auction_date
-      })
-      setData(updated)
-      setAuctionLocal(toLocalInputValue(updated?.auction_date))
+      // Nota: muchos backends devuelven SOLO los campos modificados en PATCH.
+      // Por eso MERGEAMOS y luego re-consultamos el detalle para evitar perder título/imagen/etc.
+      const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
+      console.log('[AuctionDetail][PATCH][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
+
+      // 1) Merge defensivo (no perdemos campos previos)
+      setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
+      setAuctionLocal(toLocalInputValue((updatedPartial && updatedPartial.auction_date) || (data && data.auction_date)))
       setSaveOk(true)
+
+      // 2) Refetch de detalle COMPLETO para sincronizar todo (evita placeholders)
+      setTimeout(() => {
+        let aliveRef = { current: true }
+        fetchDetail(aliveRef)
+        // no guardamos aliveRef, este refetch es inmediato; si el componente se desmonta, el effect principal maneja su propio alive
+      }, 0)
     }catch(e){
       const payload = e?.response?.data
       console.error('[AuctionDetail][PATCH][ERROR]', {
