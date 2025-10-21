@@ -9,6 +9,7 @@ export default function AuctionDetail(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
 
+  // ----------------------- HOOKS (todas arriba) -----------------------
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
@@ -23,13 +24,19 @@ export default function AuctionDetail(){
   const [saveErr, setSaveErr] = useState('')
   const [saveOk, setSaveOk] = useState(false)
 
-  // ---------- BUSCADOR DE USUARIOS (GANADOR) ----------
+  // BUSCADOR DE USUARIOS (GANADOR)
   const [userQuery, setUserQuery] = useState('')
   const [userResults, setUserResults] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
-  const [usersErr, setUsersErr] = useState('')
+  const [usersErr,  setUsersErr] = useState('')
   const [selectedWinner, setSelectedWinner] = useState(null) // { id, name, email, dni }
   const debounceRef = useRef(null)
+
+  // ESTADO para cerrar subasta (¡importante: arriba, antes de returns!)
+  const [closing, setClosing] = useState(false)
+  const [closeErr, setCloseErr] = useState('')
+  const [closeOk, setCloseOk] = useState(false)
+  // -------------------------------------------------------------------
 
   async function searchUsers(q){
     const term = (q || '').trim().toLowerCase()
@@ -77,7 +84,6 @@ export default function AuctionDetail(){
     debounceRef.current = setTimeout(()=> searchUsers(userQuery), 300)
     return ()=> clearTimeout(debounceRef.current)
   }, [userQuery])
-  // -----------------------------------------------------
 
   // --- helpers fecha ---
   function toLocalInputValue(iso){
@@ -141,8 +147,6 @@ export default function AuctionDetail(){
       setData(item || null)
       setFinalPrice(item?.final_price || '')
       setAuctionLocal(toLocalInputValue(item?.auction_date))
-
-      // Si ya tiene ganador en el back y viene su dni/nombre, podrías mapearlo aquí.
 
       setLoading(false)
     } catch (e) {
@@ -221,6 +225,7 @@ export default function AuctionDetail(){
     return today >= iso
   }, [data?.auctionDate])
 
+  // ----------------------- EARLY RETURNS (después de hooks) -----------------------
   if (user?.role !== 'admin'){
     return (
       <section className="section-frame py-16">
@@ -266,6 +271,7 @@ export default function AuctionDetail(){
       </section>
     )
   }
+  // -------------------------------------------------------------------------------
 
   // Campos defensivos
   const artworkTitle = data.artwork_title || data.title || 'Obra'
@@ -309,10 +315,6 @@ export default function AuctionDetail(){
   }
 
   // Cerrar subasta (enviar ganador y precio)
-  const [closing, setClosing] = useState(false)
-  const [closeErr, setCloseErr] = useState('')
-  const [closeOk, setCloseOk] = useState(false)
-
   async function onCloseAuction(){
     setCloseErr('')
     setCloseOk(false)
