@@ -21,7 +21,12 @@ export default function AdminArtworkReview(){
   const [basePrice, setBasePrice] = useState(0)
   // fecha de subasta
   const [auctionDate, setAuctionDate] = useState('')
-  const todayStr = useMemo(()=> new Date().toISOString().slice(0,10), [])
+  const todayStr = useMemo(() => {
+  const d = new Date();
+  // ajusta a hora local eliminando el offset de zona horaria
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0,10);
+}, []);
 
   // MODAL éxito
   const [successOpen, setSuccessOpen] = useState(false)
