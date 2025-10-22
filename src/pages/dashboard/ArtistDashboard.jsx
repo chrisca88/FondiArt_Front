@@ -177,10 +177,13 @@ export default function ArtistDashboard() {
           payload.description = description.trim()
         }
 
-        const currentPrice = parseFloat(price) || 0
-        const initialPrice = parseFloat(initialArtwork.price || initialArtwork.price_reference || 0)
-        if (currentPrice !== initialPrice) {
-          payload.price = currentPrice // snake_case/clave esperada por el back para precio
+        // Precio solo si es venta directa
+        if (directSale) {
+          const currentPrice = parseFloat(price) || 0
+          const initialPrice = parseFloat(initialArtwork.price || initialArtwork.price_reference || 0)
+          if (currentPrice !== initialPrice) {
+            payload.price = currentPrice
+          }
         }
 
         // venta_directa puede cambiar → incluir siempre si difiere
@@ -222,7 +225,9 @@ export default function ArtistDashboard() {
         // -------- CREAR (POST) --------
         const createPayload = {
           ...basePayload,
-          price: parseFloat(price) || 0,
+        }
+        if (directSale) {
+          createPayload.price = parseFloat(price) || 0
         }
         if (!directSale) {
           createPayload.fractions_total = parseInt(fractionsTotal, 10) || 0
@@ -313,20 +318,22 @@ export default function ArtistDashboard() {
                   </label>
                 </div>
 
-                <div className="mt-3">
-                  <label className="form-label" htmlFor="price">Precio de Referencia (ARS)</label>
-                  <p className="text-xs text-slate-500 -mt-1 mb-1">Este es el valor base para la obra, ya sea para venta directa o para el inicio de una subasta.</p>
-                  <input
-                    id="price"
-                    type="number"
-                    min={0}
-                    className="input w-56"
-                    placeholder="Ej. 1500.50"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    required
-                  />
-                </div>
+                {/* Campo de precio SOLO si es venta directa */}
+                {directSale && (
+                  <div className="mt-3">
+                    <label className="form-label" htmlFor="price">Precio de Referencia (ARS)</label>
+                    <input
+                      id="price"
+                      type="number"
+                      min={0}
+                      className="input w-56"
+                      placeholder="Ej. 1500.50"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      required={directSale}
+                    />
+                  </div>
+                )}
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
