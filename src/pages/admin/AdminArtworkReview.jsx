@@ -105,20 +105,17 @@ export default function AdminArtworkReview(){
       }
       const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/`, artworkUpdatePayload)
 
-      // 2. Create the auction
-      const startDate = new Date(`${auctionDate}T12:00:00Z`);
-      const endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 7); // Auction ends 7 days after start
-
+      // 2. Create the auction (nuevo contrato del endpoint)
+      // Construimos auction_date usando la fecha seleccionada y 20:00:00Z como hora por defecto
+      const auctionDateISO = new Date(`${auctionDate}T20:00:00Z`).toISOString()
       const auctionPayload = {
-        start_price: Number(basePrice),
-        start_date: startDate.toISOString(),
-        end_date: endDate.toISOString(),
-      };
-      await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload);
+        start_price: Number(basePrice).toFixed(2),
+        auction_date: auctionDateISO,
+      }
+      await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload)
 
       // 3. Tokenize the artwork
-      await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id });
+      await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id })
 
       // 4. Re-fetch artwork data to get the contract address and latest status
       try {
@@ -248,7 +245,7 @@ export default function AdminArtworkReview(){
                   placeholder="Ingresá el precio base de la obra"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  El valor “Desde” se calcula automáticamente como precio base / {FRACTIONS_TOTAL.toLocaleString('es-AR')}.
+                  El precio unitario se calcula automaticamente / {FRACTIONS_TOTAL.toLocaleString('es-AR')}.
                 </p>
               </div>
 
@@ -268,7 +265,7 @@ export default function AdminArtworkReview(){
 
               <div className="grid grid-cols-3 gap-3 text-center">
                 <Metric label="Precio base" value={`$${fmt(basePrice)}`} />
-                <Metric label="Desde" value={`$${fmt(unit)}`} />
+                <Metric label="Precio unitario" value={`$${fmt(unit)}`} />
                 <Metric label="Fracciones" value={`${FRACTIONS_TOTAL.toLocaleString('es-AR')}`} />
               </div>
 
