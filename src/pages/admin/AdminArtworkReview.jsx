@@ -22,11 +22,10 @@ export default function AdminArtworkReview(){
   // fecha de subasta
   const [auctionDate, setAuctionDate] = useState('')
   const todayStr = useMemo(() => {
-  const d = new Date();
-  // ajusta a hora local eliminando el offset de zona horaria
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0,10);
-}, []);
+    const d = new Date()
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    return local.toISOString().slice(0,10)
+  }, [])
 
   // MODAL éxito
   const [successOpen, setSuccessOpen] = useState(false)
@@ -111,7 +110,6 @@ export default function AdminArtworkReview(){
       const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/`, artworkUpdatePayload)
 
       // 2. Create the auction (nuevo contrato del endpoint)
-      // Construimos auction_date usando la fecha seleccionada y 20:00:00Z como hora por defecto
       const auctionDateISO = new Date(`${auctionDate}T20:00:00Z`).toISOString()
       const auctionPayload = {
         start_price: Number(basePrice).toFixed(2),
@@ -125,13 +123,12 @@ export default function AdminArtworkReview(){
       // 4. Re-fetch artwork data to get the contract address and latest status
       try {
         const artworkRes = await api.get(`/api/v1/artworks/${data.id}/`)
-        setData(artworkRes.data) // This is the most up-to-date version
+        setData(artworkRes.data)
         if (artworkRes.data.contract_address) {
           setContractAddress(artworkRes.data.contract_address)
         }
       } catch (e) {
         console.warn("Could not re-fetch artwork data after tokenization.", e)
-        // Fallback to the data from the initial PATCH if re-fetch fails
         setData(updatedArtwork);
       }
 
@@ -146,12 +143,51 @@ export default function AdminArtworkReview(){
     }
   }
 
+  // Intenta determinar el id de subasta asociado a la obra.
+  async function findAuctionIdForArtwork(artworkId) {
+    // 1) campos comunes en la obra
+    const direct =
+      data?.auction?.id ??
+      data?.auction_id ??
+      data?.auctionId ??
+      data?.auction?.pk ??
+      null
+    if (direct) return direct
+
+    // 2) consulta por artwork
+    try {
+      const res = await api.get(`/api/v1/auctions/?artwork=${artworkId}`)
+      const payload = res?.data
+      const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+      // preferimos una subasta "upcoming" si hubiera varias
+      const upcoming = list.find(a => a?.status === 'upcoming')
+      return (upcoming?.id ?? list?.[0]?.id) || null
+    } catch (e) {
+      console.warn('[AdminArtworkReview] No se pudo consultar auctions por artwork:', e?.response?.status, e?.message)
+      return null
+    }
+  }
+
   const onMarkPending = async () => {
     if (saving) return
     setSaving(true)
     try {
+      // 1) si existe subasta, eliminarla
+      const auctionId = await findAuctionIdForArtwork(data.id)
+      if (auctionId) {
+        try {
+          await api.delete(`/api/v1/auctions/${auctionId}/delete/`)
+          console.log('[AdminArtworkReview] Subasta eliminada (id=', auctionId, ')')
+        } catch (e) {
+          // si no existe o falla por permisos, no interrumpimos el flujo de volver a pendiente
+          console.warn('[AdminArtworkReview] No se pudo eliminar la subasta:', e?.response?.status, e?.message)
+        }
+      }
+
+      // 2) volver la obra a Pending
       await api.patch(`/api/v1/artworks/${data.id}/`, { status: 'Pending' })
-      setSuccessMsg('La obra volvió a estado pendiente.')
+
+      setSuccessMsg('La obra volvió a estado pendiente. (Si existía subasta, fue eliminada).')
       setSuccessOpen(true)
       setTimeout(() => navigate('/admin', { replace: true }), 1200)
     } catch (err) {
