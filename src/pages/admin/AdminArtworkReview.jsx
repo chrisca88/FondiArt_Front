@@ -143,9 +143,18 @@ export default function AdminArtworkReview(){
     }
   }
 
-  // Intenta determinar el id de subasta asociado a la obra.
+  // Obtiene el id de la subasta para una obra usando el NUEVO endpoint.
   async function findAuctionIdForArtwork(artworkId) {
-    // 1) campos comunes en la obra
+    // 1) endpoint oficial
+    try {
+      const res = await api.get(`/api/v1/artworks/${artworkId}/auction/`)
+      const auctionId = res?.data?.auction_id
+      if (auctionId) return auctionId
+    } catch (e) {
+      console.warn('[AdminArtworkReview] GET /artworks/:id/auction/ falló o no devolvió auction_id:', e?.response?.status, e?.message)
+    }
+
+    // 2) fallbacks por compatibilidad (si el endpoint no existiera)
     const direct =
       data?.auction?.id ??
       data?.auction_id ??
@@ -154,16 +163,14 @@ export default function AdminArtworkReview(){
       null
     if (direct) return direct
 
-    // 2) consulta por artwork
     try {
       const res = await api.get(`/api/v1/auctions/?artwork=${artworkId}`)
       const payload = res?.data
       const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-      // preferimos una subasta "upcoming" si hubiera varias
       const upcoming = list.find(a => a?.status === 'upcoming')
       return (upcoming?.id ?? list?.[0]?.id) || null
     } catch (e) {
-      console.warn('[AdminArtworkReview] No se pudo consultar auctions por artwork:', e?.response?.status, e?.message)
+      console.warn('[AdminArtworkReview] Fallback /auctions?artwork= falló:', e?.response?.status, e?.message)
       return null
     }
   }
@@ -172,16 +179,17 @@ export default function AdminArtworkReview(){
     if (saving) return
     setSaving(true)
     try {
-      // 1) si existe subasta, eliminarla
+      // 1) obtener auction_id con el nuevo endpoint y eliminar la subasta
       const auctionId = await findAuctionIdForArtwork(data.id)
       if (auctionId) {
         try {
           await api.delete(`/api/v1/auctions/${auctionId}/delete/`)
           console.log('[AdminArtworkReview] Subasta eliminada (id=', auctionId, ')')
         } catch (e) {
-          // si no existe o falla por permisos, no interrumpimos el flujo de volver a pendiente
           console.warn('[AdminArtworkReview] No se pudo eliminar la subasta:', e?.response?.status, e?.message)
         }
+      } else {
+        console.log('[AdminArtworkReview] No se encontró auction_id para eliminar.')
       }
 
       // 2) volver la obra a Pending
