@@ -341,12 +341,12 @@ export default function AuctionDetail(){
     }
   }
 
-  // --------- 🔁 NUEVO FLUJO: verificar fondos antes de cerrar subasta ---------
+  // --------- 🔁 NUEVO FLUJO COMPLETO DE CIERRE ---------
   async function onCloseAuction(){
     setCloseErr('')
     setCloseOk(false)
 
-    // Validaciones básicas como antes
+    // Validaciones básicas
     if (!selectedWinner?.id){
       setCloseErr('Seleccioná un usuario ganador.')
       return
@@ -357,10 +357,22 @@ export default function AuctionDetail(){
       return
     }
 
+    // Intentamos identificar la obra para liquidar
+    // Ajustá esta parte si en tu payload el ID real de la obra viene con otro nombre.
+    const artworkIdForLiquidation =
+      data?.artwork_id ??
+      data?.artwork ??
+      data?.id
+
+    if (!artworkIdForLiquidation){
+      setCloseErr('No se pudo identificar la obra para liquidar.')
+      return
+    }
+
     setClosing(true)
 
     try {
-      // 1. Chequear fondos
+      // 1. Chequear fondos del ganador
       const checkBody = {
         user_id: selectedWinner.id,
         amount: priceNumber
@@ -368,9 +380,7 @@ export default function AuctionDetail(){
       console.log('[AuctionDetail][CHECK-FUNDS][POST] /api/v1/finance/check-funds/', checkBody)
 
       const checkRes = await api.post('/api/v1/finance/check-funds/', checkBody)
-      // admitimos dos formatos:
-      // - { has_funds: true/false }
-      // - true / false directo
+
       const hasFunds = (typeof checkRes?.data === 'object')
         ? !!checkRes?.data?.has_funds
         : !!checkRes?.data
@@ -381,7 +391,27 @@ export default function AuctionDetail(){
         return
       }
 
-      // 2. Si tiene fondos suficientes → cerrar la subasta como antes
+      // 2. Transferir el dinero del ganador al admin
+      const transferBody = {
+        user_id: selectedWinner.id,
+        amount: priceNumber.toFixed(2)
+      }
+      console.log('[AuctionDetail][TRANSFER][POST] /api/v1/finance/transfer-to-admin/', transferBody)
+
+      const transferRes = await api.post('/api/v1/finance/transfer-to-admin/', transferBody)
+      console.log('[AuctionDetail][TRANSFER][OK]', transferRes?.data)
+
+      // 3. Liquidar la obra entre los dueños/faccionistas/etc.
+      const liquidateBody = {
+        artwork_id: artworkIdForLiquidation,
+        total_amount: priceNumber.toFixed(2)
+      }
+      console.log('[AuctionDetail][LIQUIDATE][POST] /api/v1/finance/liquidate-artwork/', liquidateBody)
+
+      const liquidateRes = await api.post('/api/v1/finance/liquidate-artwork/', liquidateBody)
+      console.log('[AuctionDetail][LIQUIDATE][OK]', liquidateRes?.data)
+
+      // 4. Marcar la subasta como finalizada en el recurso de subasta
       const payload = {
         buyer: selectedWinner.id,
         final_price: priceNumber.toFixed(2),
