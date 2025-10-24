@@ -109,7 +109,7 @@ export default function AdminArtworkReview(){
       }
       const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/`, artworkUpdatePayload)
 
-      // 2. Create the auction (nuevo contrato del endpoint)
+      // 2. Create the auction
       const auctionDateISO = new Date(`${auctionDate}T20:00:00Z`).toISOString()
       const auctionPayload = {
         start_price: Number(basePrice).toFixed(2),
@@ -117,10 +117,19 @@ export default function AdminArtworkReview(){
       }
       await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload)
 
-      // 3. Tokenize the artwork
+      // 3. Tokenize the artwork (smart contract)
       await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id })
 
-      // 4. Re-fetch artwork data to get the contract address and latest status
+      // 4. Distribución inicial de tokens al artista / pool inicial
+      try {
+        await api.post(`/api/v1/blockchain/artwork/${data.id}/distribute/`)
+        console.log('[AdminArtworkReview] Distribución inicial realizada correctamente.')
+      } catch (distErr) {
+        console.warn('[AdminArtworkReview] Error al distribuir tokens inicialmente:', distErr?.response?.status, distErr?.message)
+        window.alert('El contrato se creó, pero hubo un problema al distribuir los tokens iniciales.')
+      }
+
+      // 5. Re-fetch artwork data para reflejar dirección del contrato y estado final
       try {
         const artworkRes = await api.get(`/api/v1/artworks/${data.id}/`)
         setData(artworkRes.data)
@@ -132,10 +141,10 @@ export default function AdminArtworkReview(){
         setData(updatedArtwork);
       }
 
-      setSuccessMsg('Obra aprobada, subasta creada y tokenización iniciada.')
+      setSuccessMsg('Obra aprobada, subasta creada, tokenización y distribución inicial realizadas.')
       setSuccessOpen(true)
     } catch (err) {
-      console.error("Error during artwork approval, auction creation, or tokenization:", err)
+      console.error("Error during artwork approval, auction creation, tokenization, or distribution:", err)
       const errorMsg = err.response?.data?.detail || err.response?.data?.[0] || err.message || 'Ocurrió un error.'
       window.alert(errorMsg)
     } finally {
@@ -154,7 +163,7 @@ export default function AdminArtworkReview(){
       console.warn('[AdminArtworkReview] GET /artworks/:id/auction/ falló o no devolvió auction_id:', e?.response?.status, e?.message)
     }
 
-    // 2) fallbacks por compatibilidad (si el endpoint no existiera)
+    // 2) fallbacks por compatibilidad
     const direct =
       data?.auction?.id ??
       data?.auction_id ??
@@ -179,7 +188,7 @@ export default function AdminArtworkReview(){
     if (saving) return
     setSaving(true)
     try {
-      // 1) obtener auction_id con el nuevo endpoint y eliminar la subasta
+      // 1) obtener auction_id y eliminar la subasta
       const auctionId = await findAuctionIdForArtwork(data.id)
       if (auctionId) {
         try {
