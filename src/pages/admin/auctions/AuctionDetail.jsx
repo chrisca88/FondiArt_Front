@@ -1,4 +1,4 @@
-// src/pages/admin/auctions/AuctionDetail.jsx
+// src/pages/admin/auctions/AuctionDetail.jsx 
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -341,10 +341,12 @@ export default function AuctionDetail(){
     }
   }
 
-  // Cerrar subasta (enviar ganador y precio + status finished)
+  // --------- 🔁 NUEVO FLUJO: verificar fondos antes de cerrar subasta ---------
   async function onCloseAuction(){
     setCloseErr('')
     setCloseOk(false)
+
+    // Validaciones básicas como antes
     if (!selectedWinner?.id){
       setCloseErr('Seleccioná un usuario ganador.')
       return
@@ -354,30 +356,63 @@ export default function AuctionDetail(){
       setCloseErr('Ingresá un precio final válido.')
       return
     }
-    const payload = {
-      buyer: selectedWinner.id,
-      final_price: priceNumber.toFixed(2),
-      status: 'finished',
-    }
-    console.log('[AuctionDetail][CLOSE_AUCTION][PATCH] /api/v1/auctions/%s/ body=', id, payload)
+
     setClosing(true)
-    try{
+
+    try {
+      // 1. Chequear fondos
+      const checkBody = {
+        user_id: selectedWinner.id,
+        amount: priceNumber
+      }
+      console.log('[AuctionDetail][CHECK-FUNDS][POST] /api/v1/finance/check-funds/', checkBody)
+
+      const checkRes = await api.post('/api/v1/finance/check-funds/', checkBody)
+      // admitimos dos formatos:
+      // - { has_funds: true/false }
+      // - true / false directo
+      const hasFunds = (typeof checkRes?.data === 'object')
+        ? !!checkRes?.data?.has_funds
+        : !!checkRes?.data
+
+      if (!hasFunds){
+        console.warn('[AuctionDetail][CHECK-FUNDS][FAIL] Fondos insuficientes')
+        setCloseErr('El usuario ganador no tiene fondos suficientes. No se puede marcar como subastada.')
+        return
+      }
+
+      // 2. Si tiene fondos suficientes → cerrar la subasta como antes
+      const payload = {
+        buyer: selectedWinner.id,
+        final_price: priceNumber.toFixed(2),
+        status: 'finished',
+      }
+      console.log('[AuctionDetail][CLOSE-AUCTION][PATCH] /api/v1/auctions/%s/ body=', id, payload)
+
       const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, payload)
-      console.log('[AuctionDetail][CLOSE_AUCTION][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
+      console.log('[AuctionDetail][CLOSE-AUCTION][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
+
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
       setCloseOk(true)
 
       // Re-fetch para objeto completo y estado actualizado
       await fetchDetail({ current: true })
       setWinnerUser(selectedWinner) // reflejo inmediato del ganador con DNI
-    }catch(e){
+
+    } catch(e){
       const p = e?.response?.data
-      console.error('[AuctionDetail][CLOSE_AUCTION][ERROR]', e?.response?.status, p || e?.message)
-      setCloseErr(p?.detail || p?.message || e?.message || 'No se pudo cerrar la subasta.')
-    }finally{
+      console.error('[AuctionDetail][CLOSE-AUCTION][ERROR]', e?.response?.status, p || e?.message)
+      setCloseErr(
+        p?.detail ||
+        p?.message ||
+        e?.message ||
+        'No se pudo cerrar la subasta.'
+      )
+    } finally {
       setClosing(false)
     }
   }
+  // ---------------------------------------------------------------------------
 
   // Log final
   console.log('[AuctionDetail][RENDER]', {
