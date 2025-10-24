@@ -381,8 +381,10 @@ export default function AuctionDetail(){
 
       const checkRes = await api.post('/api/v1/finance/check-funds/', checkBody)
 
+      // 🔁 ACÁ la única modificación solicitada:
+      // El backend responde { has_sufficient_funds: True/False }
       const hasFunds = (typeof checkRes?.data === 'object')
-        ? !!checkRes?.data?.has_funds
+        ? !!checkRes?.data?.has_sufficient_funds
         : !!checkRes?.data
 
       if (!hasFunds){
