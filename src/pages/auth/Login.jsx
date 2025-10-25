@@ -141,13 +141,6 @@ export default function Login(){
 
           <div className="my-6 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
-          {/* Botón social opcional (Google) */}
-          <div className="grid sm:grid-cols-1 gap-3">
-            <button className="w-full rounded-xl border border-slate-300 bg-white/80 px-4 py-2.5 text-sm font-semibold hover:bg-white">
-              Continuar con Google
-            </button>
-          </div>
-
           <p className="mt-6 text-center text-sm text-slate-600">
             ¿No tenés cuenta?{' '}
             <Link to="/register" className="text-indigo-600 font-semibold hover:underline">Registrate</Link>
