@@ -7,6 +7,7 @@ import FAQ from './pages/FAQ.jsx'
 import Info from './pages/Info.jsx'
 import Login from './pages/auth/Login.jsx'
 import Register from './pages/auth/Register.jsx'
+import ForgotPassword from './pages/auth/ForgotPassword.jsx'
 
 import BuyerDashboard from './pages/dashboard/BuyerDashboard.jsx'
 import ArtistDashboard from './pages/dashboard/ArtistDashboard.jsx'
@@ -48,6 +49,7 @@ export default function App(){
         <Route path="/faq" element={<FAQ/>} />
         <Route path="/login" element={<Login/>} />
         <Route path="/register" element={<Register/>} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* Rutas protegidas */}
         <Route element={<RequireAuth/>}>

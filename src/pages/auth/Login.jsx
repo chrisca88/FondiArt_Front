@@ -123,7 +123,7 @@ export default function Login(){
                 <input type="checkbox" className="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>
                 <span className="text-sm text-slate-700">Recordarme</span>
               </label>
-              <a href="#" className="text-sm text-indigo-600 hover:underline">¿Olvidaste tu contraseña?</a>
+              <Link to="/forgot-password" className="text-sm text-indigo-600 hover:underline">¿Olvidaste tu contraseña?</Link>
             </div>
 
             {/* Submit */}
