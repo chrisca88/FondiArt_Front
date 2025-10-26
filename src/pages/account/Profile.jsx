@@ -10,6 +10,10 @@ export default function Profile(){
   const error  = useSelector(s => s.auth.error)
   const dispatch = useDispatch()
 
+  // loading/err del fetch al nuevo endpoint
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileErr, setProfileErr] = useState('')
+
   const [form, setForm] = useState({
     name:      user?.name      || '',
     email:     user?.email     || '',
@@ -20,6 +24,8 @@ export default function Profile(){
     cbu:       user?.cbu       || '',
   })
 
+  // 1) Cuando cambia el user en redux, sincronizamos como fallback inmediato
+  //    (esto mantiene comportamiento anterior para no mostrar form vacío)
   useEffect(()=>{
     setForm(f => ({
       ...f,
@@ -31,7 +37,58 @@ export default function Profile(){
       dni:       user?.dni       ?? f.dni,
       cbu:       user?.cbu       ?? f.cbu,
     }))
-  }, [user?.name, user?.email, user?.avatarUrl, user?.avatar, user?.bio, user?.phone, user?.dni, user?.cbu])
+  }, [
+    user?.name,
+    user?.email,
+    user?.avatarUrl,
+    user?.avatar,
+    user?.bio,
+    user?.phone,
+    user?.dni,
+    user?.cbu
+  ])
+
+  // 2) Fetch real al backend /api/v1/users/:id/ para tener datos más frescos
+  useEffect(()=>{
+    const uid = user?.id
+    if (!uid) return
+
+    let alive = true
+    setProfileLoading(true)
+    setProfileErr('')
+
+    authService.client
+      .get(`/api/v1/users/${uid}/`)
+      .then(res => {
+        if (!alive) return
+        const data = res?.data || {}
+
+        // mapeamos campos exactamente como vienen del endpoint de ejemplo
+        // {
+        //   id, username, name, email, role, avatarUrl, dni, phone, bio, cbu, date_joined
+        // }
+
+        setForm(prev => ({
+          ...prev,
+          name:      data.name        ?? prev.name,
+          email:     data.email       ?? prev.email,
+          avatarUrl: data.avatarUrl   ?? prev.avatarUrl,
+          bio:       data.bio         ?? prev.bio,
+          phone:     data.phone       ?? prev.phone,
+          dni:       data.dni         ?? prev.dni,
+          cbu:       data.cbu         ?? prev.cbu,
+        }))
+        setProfileLoading(false)
+      })
+      .catch(err => {
+        if (!alive) return
+        const msg = err?.response?.data?.message || err?.message || 'No se pudo cargar tu perfil.'
+        setProfileErr(msg)
+        setProfileLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, [user?.id])
 
   const [saved, setSaved] = useState(false)
   const [errors, setErrors] = useState({})
@@ -53,8 +110,12 @@ export default function Profile(){
 
   const validate = ()=>{
     const errs = {}
-    if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
-    if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
+    if (form.dni && !/^\d{7,9}$/.test(form.dni.trim())) {
+      errs.dni = 'El DNI debe tener solo números (7 a 9 dígitos).'
+    }
+    if (form.cbu && !/^\d{22}$/.test(form.cbu.trim())) {
+      errs.cbu = 'El CBU debe tener 22 dígitos (sin espacios ni guiones).'
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -118,15 +179,14 @@ export default function Profile(){
   // Feedback en vivo para el CBU
   const cbuLen = (form.cbu || '').length
   const CBU_TOTAL = 22
-  const cbuDigitsLeft = CBU_TOTAL - cbuLen
 
-  // Logs útiles para diagnosticar “se desloguea”
+  // Logs dev
   useEffect(()=>{
     if (import.meta.env.DEV) {
-      console.log('[Profile] user store:', user)
-      console.log('[Profile] token in LS exists?:', !!localStorage.getItem('token'))
+      console.log('[Profile] redux user:', user)
+      console.log('[Profile] profile fetch loading / err:', { profileLoading, profileErr })
     }
-  }, [user])
+  }, [user, profileLoading, profileErr])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -148,6 +208,11 @@ export default function Profile(){
           {(submitErr || (error && status === 'failed')) && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-red-700 text-sm">
               {submitErr || String(error)}
+            </div>
+          )}
+          {profileErr && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-amber-800 text-sm">
+              {profileErr}
             </div>
           )}
 
@@ -194,15 +259,30 @@ export default function Profile(){
 
           <div>
             <label className="form-label" htmlFor="name">Nombre</label>
-            <input id="name" name="name" className="input" value={form.name} onChange={onChange} />
+            <input
+              id="name"
+              name="name"
+              className="input"
+              value={form.name}
+              onChange={onChange}
+              disabled={profileLoading}
+            />
           </div>
 
           <div>
             <label className="form-label" htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" className="input" value={form.email} onChange={onChange} />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              className="input"
+              value={form.email}
+              onChange={onChange}
+              disabled={profileLoading}
+            />
           </div>
 
-          {isArtist && (
+          {String(user?.role).toLowerCase() === 'artist' && (
             <div>
               <label className="form-label" htmlFor="bio">Biografía</label>
               <textarea
@@ -212,6 +292,7 @@ export default function Profile(){
                 placeholder="Contanos sobre vos, tu estilo, exposiciones, etc."
                 value={form.bio}
                 onChange={onChange}
+                disabled={profileLoading}
               />
               <p className="text-xs text-slate-500 mt-1">Esto puede mostrarse en tu perfil público.</p>
             </div>
@@ -227,6 +308,7 @@ export default function Profile(){
               placeholder="+54 11 5555-5555"
               value={form.phone}
               onChange={onChange}
+              disabled={profileLoading}
             />
           </div>
 
@@ -242,6 +324,7 @@ export default function Profile(){
               value={form.dni}
               onChange={(e)=> onChange({ target: { name: 'dni', value: e.target.value.replace(/[^\d]/g,'') } })}
               maxLength={9}
+              disabled={profileLoading}
             />
             {errors.dni && <p className="text-xs text-red-600 mt-1">{errors.dni}</p>}
           </div>
@@ -258,21 +341,22 @@ export default function Profile(){
               value={form.cbu}
               onChange={(e)=> onChange({ target: { name: 'cbu', value: e.target.value.replace(/[^\d]/g,'') } })}
               maxLength={22}
+              disabled={profileLoading}
             />
 
-            {/* mensaje de error oficial si no cumple validación */}
+            {/* error validación final */}
             {errors.cbu && (
               <p className="text-xs text-red-600 mt-1">{errors.cbu}</p>
             )}
 
-            {/* feedback en vivo de longitud, solo si no hay error */}
-            {!errors.cbu && !!cbuLen && cbuLen < CBU_TOTAL && (
+            {/* feedback en vivo mientras escribe, solo si no hay error final */}
+            {!errors.cbu && !!form.cbu && form.cbu.length < CBU_TOTAL && (
               <p className="text-xs text-slate-500 mt-1">
-                Faltan {CBU_TOTAL - cbuLen} dígitos para completar el CBU.
+                Faltan {CBU_TOTAL - form.cbu.length} dígitos para completar el CBU.
               </p>
             )}
 
-            {!errors.cbu && cbuLen === CBU_TOTAL && (
+            {!errors.cbu && form.cbu.length === CBU_TOTAL && (
               <p className="text-xs text-emerald-600 font-medium mt-1">
                 CBU completo ✓
               </p>
@@ -280,11 +364,16 @@ export default function Profile(){
           </div>
 
           <div className="pt-2">
-            <button className="btn btn-primary btn-lg" disabled={saving || status === 'loading' || uploading}>
+            <button
+              className="btn btn-primary btn-lg"
+              disabled={saving || status === 'loading' || uploading || profileLoading}
+            >
               {saving || status === 'loading'
                 ? 'Guardando…'
                 : uploading
                 ? 'Esperá a que termine la subida…'
+                : profileLoading
+                ? 'Cargando perfil…'
                 : 'Guardar cambios'}
             </button>
           </div>
