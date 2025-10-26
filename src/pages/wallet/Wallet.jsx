@@ -493,7 +493,7 @@ export default function Wallet(){
                   Necesitás cargar tu CBU en tu perfil antes de poder retirar.{' '}
                   <button
                     className="underline text-indigo-600 font-semibold"
-                    onClick={()=> navigate('/cuenta/perfil')}
+                    onClick={()=> navigate('/cuenta')}
                   >
                     Hacé click acá para cargarlo.
                   </button>
