@@ -44,11 +44,15 @@ export default function MyWorks(){
 
   // --- filtrado local ---
   const filteredItems = items.filter(it => {
-    // heurística:
-    // asumimos que si tiene fraccionesTotal > 0 => tokenizada
-    const isTokenized = Number(it.fractionsTotal || 0) > 0
-    if (filterType === 'tokenized') return isTokenized
-    if (filterType === 'direct') return !isTokenized
+    // preferimos un campo explícito del backend
+    const saleType = it.sale_type // "tokenized" | "direct" | undefined
+
+    // fallback heurístico por si el back todavía no manda sale_type
+    const guessTokenized = Number(it.fractionsTotal || 0) > 0
+    const effectiveType = saleType || (guessTokenized ? 'tokenized' : 'direct')
+
+    if (filterType === 'tokenized') return effectiveType === 'tokenized'
+    if (filterType === 'direct') return effectiveType === 'direct'
     return true // 'all'
   })
 
@@ -57,13 +61,33 @@ export default function MyWorks(){
       <div className="section-frame pt-10 pb-6">
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
           <div className="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-gradient-to-tr from-indigo-200 via-purple-200 to-pink-200 blur-3xl opacity-70" />
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-            <div>
+
+          {/* Header layout: título a la izquierda, filtros + publicar a la derecha */}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            {/* IZQ: título y subtítulo */}
+            <div className="flex-1 min-w-0">
               <p className="eyebrow">Artista</p>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mis obras</h1>
               <p className="lead mt-2 max-w-2xl">Gestioná tus publicaciones, estado y estadísticas.</p>
             </div>
-            <Link to="/publicar" className="btn btn-primary self-start">Publicar obra</Link>
+
+            {/* DER: filtros + botón publicar */}
+            <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:flex-none">
+              {/* segmented control */}
+              <SegmentedControl
+                value={filterType}
+                onChange={setFilterType}
+                options={[
+                  { value: 'tokenized', label: 'Tokenizadas' },
+                  { value: 'direct', label: 'Compra directa' },
+                  { value: 'all', label: 'Todas' },
+                ]}
+              />
+
+              <Link to="/publicar" className="btn btn-primary self-stretch sm:self-auto whitespace-nowrap">
+                Publicar obra
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -87,26 +111,6 @@ export default function MyWorks(){
 
         {!loading && !error && items.length > 0 && (
           <>
-            {/* Filtros */}
-            <div className="mb-6 flex flex-wrap gap-2">
-              <FilterButton
-                active={filterType === 'all'}
-                onClick={()=>setFilterType('all')}
-                label="Todas"
-              />
-              <FilterButton
-                active={filterType === 'tokenized'}
-                onClick={()=>setFilterType('tokenized')}
-                label="Tokenizadas"
-              />
-              <FilterButton
-                active={filterType === 'direct'}
-                onClick={()=>setFilterType('direct')}
-                label="Compra directa"
-              />
-            </div>
-
-            {/* Grid de obras filtradas */}
             {filteredItems.length === 0 ? (
               <div className="card-surface p-10 text-center">
                 <h3 className="text-xl font-bold">No hay obras en esta categoría</h3>
@@ -186,7 +190,6 @@ function OwnerArtworkCard({ item, onStats }){
           {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
         </div>
 
-        {/* botones acción */}
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <Link
             to={`/publicar/${item.id}`}
@@ -225,21 +228,30 @@ function GridSkeleton(){
   )
 }
 
-/* pill button del filtro */
-function FilterButton({ active, onClick, label }){
+/* segmented control con 3 opciones */
+function SegmentedControl({ value, onChange, options }){
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        `px-4 py-2 rounded-xl text-sm font-semibold border transition
-        ${active
-          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-          : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-white'
-        }`
-      }
-    >
-      {label}
-    </button>
+    <div className="inline-flex rounded-xl border border-slate-300 bg-white/80 text-sm font-semibold overflow-hidden shadow-sm">
+      {options.map((opt, idx) => {
+        const active = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={()=>onChange(opt.value)}
+            className={[
+              'px-4 py-2 whitespace-nowrap transition',
+              active
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-700 hover:bg-white',
+              // bordes internos entre tabs
+              idx !== options.length - 1 ? 'border-r border-slate-300' : ''
+            ].join(' ')}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
