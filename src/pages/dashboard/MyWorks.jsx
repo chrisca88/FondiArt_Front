@@ -8,6 +8,7 @@ export default function MyWorks(){
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [filterType, setFilterType] = useState('all') // 'all' | 'tokenized' | 'direct'
   const navigate = useNavigate()
 
   useEffect(()=>{
@@ -40,6 +41,16 @@ export default function MyWorks(){
 
     return ()=>{ alive = false }
   }, [user])
+
+  // --- filtrado local ---
+  const filteredItems = items.filter(it => {
+    // heurística:
+    // asumimos que si tiene fraccionesTotal > 0 => tokenizada
+    const isTokenized = Number(it.fractionsTotal || 0) > 0
+    if (filterType === 'tokenized') return isTokenized
+    if (filterType === 'direct') return !isTokenized
+    return true // 'all'
+  })
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -75,15 +86,46 @@ export default function MyWorks(){
         )}
 
         {!loading && !error && items.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {items.map(it => (
-              <OwnerArtworkCard
-                key={it.id}
-                item={it}
-                onStats={()=>navigate(`/obra/${it.id}/estadisticas`)}
+          <>
+            {/* Filtros */}
+            <div className="mb-6 flex flex-wrap gap-2">
+              <FilterButton
+                active={filterType === 'all'}
+                onClick={()=>setFilterType('all')}
+                label="Todas"
               />
-            ))}
-          </div>
+              <FilterButton
+                active={filterType === 'tokenized'}
+                onClick={()=>setFilterType('tokenized')}
+                label="Tokenizadas"
+              />
+              <FilterButton
+                active={filterType === 'direct'}
+                onClick={()=>setFilterType('direct')}
+                label="Compra directa"
+              />
+            </div>
+
+            {/* Grid de obras filtradas */}
+            {filteredItems.length === 0 ? (
+              <div className="card-surface p-10 text-center">
+                <h3 className="text-xl font-bold">No hay obras en esta categoría</h3>
+                <p className="text-slate-600 mt-1">
+                  Probá cambiando el filtro de arriba.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredItems.map(it => (
+                  <OwnerArtworkCard
+                    key={it.id}
+                    item={it}
+                    onStats={()=>navigate(`/obra/${it.id}/estadisticas`)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -144,7 +186,7 @@ function OwnerArtworkCard({ item, onStats }){
           {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
         </div>
 
-        {/* 🔧 Ajuste estético final: ambos botones mismo ancho y estilo responsive */}
+        {/* botones acción */}
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <Link
             to={`/publicar/${item.id}`}
@@ -180,5 +222,24 @@ function GridSkeleton(){
         </div>
       ))}
     </div>
+  )
+}
+
+/* pill button del filtro */
+function FilterButton({ active, onClick, label }){
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        `px-4 py-2 rounded-xl text-sm font-semibold border transition
+        ${active
+          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+          : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-white'
+        }`
+      }
+    >
+      {label}
+    </button>
   )
 }
