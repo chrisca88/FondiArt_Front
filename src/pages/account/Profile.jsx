@@ -196,12 +196,13 @@ export default function Profile(){
     }
   }
 
-  const isArtist = String(user?.role).toLowerCase() === 'artist'
+  // 👇 ESTA es la versión buena, la mantenemos DENTRO del componente
   const fmtInputError = (key)=> errors[key] ? '!border-red-300 focus:!ring-red-200' : ''
+
+  const isArtist = String(user?.role).toLowerCase() === 'artist'
   const previewSrc = localPreview || form.avatarUrl
 
   // Feedback en vivo para el CBU
-  const cbuLen = (form.cbu || '').length
   const CBU_TOTAL = 22
 
   // Logs dev
@@ -209,8 +210,9 @@ export default function Profile(){
     if (import.meta.env.DEV) {
       console.log('[Profile] redux user:', user)
       console.log('[Profile] profile fetch loading / err:', { profileLoading, profileErr })
+      console.log('[Profile] showResultModal:', showResultModal, { resultOk, resultMsg })
     }
-  }, [user, profileLoading, profileErr])
+  }, [user, profileLoading, profileErr, showResultModal, resultOk, resultMsg])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -223,7 +225,7 @@ export default function Profile(){
 
         <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
 
-          {/* Alertas inline (se mantienen por compatibilidad, pero ahora también tenemos modal) */}
+          {/* Alertas inline (legacy) */}
           {saved && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700 text-sm">
               ¡Datos guardados correctamente!
@@ -286,7 +288,7 @@ export default function Profile(){
             <input
               id="name"
               name="name"
-              className="input"
+              className={`input ${fmtInputError('name')}`}
               value={form.name}
               onChange={onChange}
               disabled={profileLoading}
@@ -299,20 +301,20 @@ export default function Profile(){
               id="email"
               name="email"
               type="email"
-              className="input"
+              className={`input ${fmtInputError('email')}`}
               value={form.email}
               onChange={onChange}
               disabled={profileLoading}
             />
           </div>
 
-          {String(user?.role).toLowerCase() === 'artist' && (
+          {isArtist && (
             <div>
               <label className="form-label" htmlFor="bio">Biografía</label>
               <textarea
                 id="bio"
                 name="bio"
-                className="input h-32"
+                className={`input h-32 ${fmtInputError('bio')}`}
                 placeholder="Contanos sobre vos, tu estilo, exposiciones, etc."
                 value={form.bio}
                 onChange={onChange}
@@ -328,7 +330,7 @@ export default function Profile(){
               id="phone"
               name="phone"
               type="tel"
-              className="input"
+              className={`input ${fmtInputError('phone')}`}
               placeholder="+54 11 5555-5555"
               value={form.phone}
               onChange={onChange}
@@ -453,13 +455,4 @@ function ResultModal({ ok, message, onClose }){
       </div>
     </div>
   )
-}
-
-/* ---------------- Helpers visuales ---------------- */
-function fmtInputError(key){
-  return key ? '' : ''
-  // Nota: la lógica original ya estaba arriba como const fmtInputError = (key)=> ...
-  // Pero necesitamos esa función dentro del archivo completo.
-  // La volvemos a declarar abajo de todo para evitar reference error.
-  // Vamos a redefinirla correctamente más abajo.
 }
