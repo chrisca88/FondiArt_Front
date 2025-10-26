@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getArtworkById } from '../../services/mockArtworks.js'
+import api from '../../utils/api.js' // <-- usamos tu helper api
 
 export default function ArtworkStats(){
   const { id } = useParams()
@@ -11,12 +11,21 @@ export default function ArtworkStats(){
   useEffect(()=>{
     let alive = true
     setLoading(true)
-    getArtworkById(id).then(it=>{
-      if(!alive) return
-      setData(it); setLoading(false)
-    }).catch(e=>{
-      setErr(e.message || 'No se pudo cargar'); setLoading(false)
-    })
+    setErr(null)
+
+    api.get(`/api/v1/artworks/${id}/stats/`)
+      .then(res => {
+        if(!alive) return
+        setData(res?.data)
+        setLoading(false)
+      })
+      .catch(e => {
+        if(!alive) return
+        console.error('[ArtworkStats][ERROR]', e?.response?.status, e?.response?.data || e?.message)
+        setErr(e?.message || 'No se pudo cargar')
+        setLoading(false)
+      })
+
     return ()=>{ alive = false }
   }, [id])
 
