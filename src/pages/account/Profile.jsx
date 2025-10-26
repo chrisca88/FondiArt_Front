@@ -58,7 +58,7 @@ export default function Profile(){
     setProfileErr('')
 
     authService.client
-      .get(`/api/v1/users/${uid}/`)
+      .get(`/users/${uid}/`)
       .then(res => {
         if (!alive) return
         const data = res?.data || {}
