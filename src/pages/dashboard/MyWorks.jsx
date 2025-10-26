@@ -1,4 +1,3 @@
-// src/pages/dashboard/MyWorks.jsx
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
@@ -145,7 +144,8 @@ function OwnerArtworkCard({ item, onStats }){
           {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
         </div>
 
-        <div className="flex gap-2 pt-2">
+        {/* 🔧 Ajuste estético: espaciado y adaptabilidad */}
+        <div className="flex flex-wrap gap-2 mt-3">
           <Link
             to={`/publicar/${item.id}`}
             className="btn btn-outline flex-1 rounded-xl"
@@ -153,7 +153,10 @@ function OwnerArtworkCard({ item, onStats }){
           >
             Editar publicación
           </Link>
-          <button onClick={onStats} className="btn btn-primary rounded-xl">
+          <button
+            onClick={onStats}
+            className="btn btn-primary flex-1 sm:flex-none rounded-xl"
+          >
             Ver estadísticas
           </button>
         </div>
@@ -165,7 +168,7 @@ function OwnerArtworkCard({ item, onStats }){
 function GridSkeleton(){
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {Array.from({length:8}).map((_,i)=>(
+      {Array.from({length:8}).map((_,i)=>( 
         <div key={i} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
           <div className="aspect-[4/3] w-full animate-pulse bg-slate-200/70" />
           <div className="p-4 space-y-2">
