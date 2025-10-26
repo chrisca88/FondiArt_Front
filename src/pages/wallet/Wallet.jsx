@@ -35,6 +35,11 @@ export default function Wallet(){
   const [showAmounts, setShowAmounts] = useState(true)
   const [hideSmall, setHideSmall]   = useState(false)
 
+  // Transfer UI state
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferErr, setTransferErr] = useState('')
+  const [transferMsg, setTransferMsg] = useState('')
+
   // Log de contexto al montar
   useEffect(()=>{
     if (!import.meta.env.DEV) return
@@ -145,8 +150,8 @@ export default function Wallet(){
           console.log('[WALLET] GET /cuadro-tokens/ RESPONSE:', results)
         }
         const mapped = results.map(t => ({
-          tokenId: Number(t.id),          // id del token
-          artworkId: t.artwork_id,        // id de la obra (para navegar)
+          tokenId: Number(t.id),
+          artworkId: t.artwork_id,
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
@@ -206,12 +211,10 @@ export default function Wallet(){
       .then(res => {
         if(!alive) return
 
-        // --- LOG de la respuesta cruda ----
         if (import.meta.env.DEV) {
           console.log('[WALLET] GET holdings RAW RESPONSE ->', res?.status, res?.data)
         }
 
-        // Soporta respuesta paginada {results:[...]} o array directo
         const payload = res?.data
         const arr = Array.isArray(payload?.results)
           ? payload.results
@@ -269,7 +272,7 @@ export default function Wallet(){
     return merged
   }, [tokens, holdings])
 
-  // búsqueda + filtro < $1 (usa tokensView)
+  // búsqueda + filtro < $1
   const filtered = useMemo(()=>{
     const term = q.trim().toLowerCase()
     let arr = tokensView
@@ -280,10 +283,70 @@ export default function Wallet(){
       )
     }
     if (hideSmall) {
-      arr = arr.filter(it => Number.isFinite(Number(it.valueARS)) ? Number(it.valueARS) >= 1 : true)
+      arr = arr.filter(it =>
+        Number.isFinite(Number(it.valueARS))
+          ? Number(it.valueARS) >= 1
+          : true
+      )
     }
     return arr
   }, [q, tokensView, hideSmall])
+
+  // --------- NUEVA FUNCIÓN: Transferir ---------
+  async function handleTransfer(){
+    // limpiamos estados visuales previos
+    setTransferErr('')
+    setTransferMsg('')
+
+    // chequeos básicos
+    if (!user?.id) {
+      setTransferErr('No hay usuario autenticado.')
+      return
+    }
+    if (cashARS <= 0) {
+      setTransferErr('No tenés saldo disponible para transferir.')
+      return
+    }
+
+    setTransferLoading(true)
+    try {
+      // 1. check CBU
+      const checkUrl = `/api/v1/users/${user.id}/check-cbu/`
+      if (import.meta.env.DEV) {
+        console.log('[WALLET][TRANSFER] GET', checkUrl)
+      }
+      const checkRes = await authService.client.get(checkUrl)
+      const hasCbu = checkRes?.data?.has_cbu
+
+      if (!hasCbu) {
+        setTransferErr('Necesitás cargar tu CBU en tu perfil antes de poder retirar.')
+        setTransferLoading(false)
+        return
+      }
+
+      // 2. withdraw
+      const withdrawUrl = `/api/v1/finance/withdraw-to-cbu/`
+      if (import.meta.env.DEV) {
+        console.log('[WALLET][TRANSFER] POST', withdrawUrl)
+      }
+      const withdrawRes = await authService.client.post(withdrawUrl, {
+        // si tu backend más adelante pide amount u otro dato, agregalo acá
+      })
+
+      if (withdrawRes?.data?.message) {
+        setTransferMsg(withdrawRes.data.message)
+      } else if (withdrawRes?.data?.error) {
+        setTransferErr(withdrawRes.data.error)
+      } else {
+        setTransferMsg('Transferencia solicitada.')
+      }
+    } catch (e){
+      const fallback = e?.response?.data?.error || e?.response?.data?.message || e.message || 'No se pudo completar la transferencia.'
+      setTransferErr(fallback)
+    } finally {
+      setTransferLoading(false)
+    }
+  }
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -321,6 +384,8 @@ export default function Wallet(){
               error={cashError}
               masked={!showAmounts}
               onToggle={()=> setShowAmounts(v => !v)}
+              onTransfer={handleTransfer}
+              transferLoading={transferLoading}
             />
           </div>
 
@@ -349,6 +414,20 @@ export default function Wallet(){
             </label>
           </div>
         </div>
+
+        {/* Mensajes de transferencia */}
+        {(transferErr || transferMsg) && (
+          <div
+            className={[
+              'rounded-xl px-4 py-3 text-sm font-medium',
+              transferErr
+                ? 'border border-red-200 bg-red-50 text-red-700'
+                : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+            ].join(' ')}
+          >
+            {transferErr || transferMsg}
+          </div>
+        )}
 
         {/* Mensaje opcional por error de holdings */}
         {!!holdingsError && !holdingsLoading && (
@@ -473,7 +552,15 @@ function RowToken({ item, masked = false, onBuy }){
 }
 
 /* -------------------- UI helpers -------------------- */
-function BalanceBox({ value = 0, masked = false, onToggle, loading, error }){
+function BalanceBox({
+  value = 0,
+  masked = false,
+  onToggle,
+  loading,
+  error,
+  onTransfer,
+  transferLoading
+}){
   const renderContent = () => {
     if (loading) return <div className="text-sm text-slate-500">Cargando saldo…</div>
     if (error) return <div className="text-sm text-red-600" title={error}>Error de saldo</div>
@@ -482,7 +569,8 @@ function BalanceBox({ value = 0, masked = false, onToggle, loading, error }){
   }
 
   return (
-    <div className="relative rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 px-5 py-3 text-center shadow-sm min-w-[220px]">
+    <div className="relative rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 px-5 py-4 text-center shadow-sm min-w-[240px] flex flex-col items-stretch gap-3">
+      {/* toggle ver/ocultar */}
       <button
         onClick={onToggle}
         className="absolute right-3 top-3 text-slate-500 hover:text-slate-700"
@@ -490,8 +578,18 @@ function BalanceBox({ value = 0, masked = false, onToggle, loading, error }){
       >
         {masked ? <EyeOffIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}
       </button>
+
       <div className="text-2xl font-extrabold">{renderContent()}</div>
       <div className="text-[11px] tracking-wider uppercase text-slate-500">Saldo en pesos</div>
+
+      {/* Botón Transferir */}
+      <button
+        onClick={onTransfer}
+        disabled={transferLoading || loading || !!error}
+        className="btn btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        {transferLoading ? 'Transfiriendo…' : 'Transferir'}
+      </button>
     </div>
   )
 }
