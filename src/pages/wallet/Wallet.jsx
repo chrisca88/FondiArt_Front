@@ -35,10 +35,15 @@ export default function Wallet(){
   const [showAmounts, setShowAmounts] = useState(true)
   const [hideSmall, setHideSmall]   = useState(false)
 
-  // Transfer UI state
+  // Transfer UI state (mensajes globales debajo del header)
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferErr, setTransferErr] = useState('')
   const [transferMsg, setTransferMsg] = useState('')
+
+  // Modal de transferencia
+  const [showTransferModal, setShowTransferModal] = useState(false)
+  const [transferAmount, setTransferAmount] = useState('') // string para el <input/>
+  const [modalErr, setModalErr] = useState('')
 
   // Log de contexto al montar
   useEffect(()=>{
@@ -150,8 +155,8 @@ export default function Wallet(){
           console.log('[WALLET] GET /cuadro-tokens/ RESPONSE:', results)
         }
         const mapped = results.map(t => ({
-          tokenId: Number(t.id),
-          artworkId: t.artwork_id,
+          tokenId: Number(t.id),          // id del token
+          artworkId: t.artwork_id,        // id de la obra (para navegar)
           symbol: t.token_symbol || '',
           title: t.artwork_title || '',
           price: Number(t.FractionFrom ?? t.fractionFrom ?? 0),
@@ -253,7 +258,7 @@ export default function Wallet(){
     return ()=>{ alive = false }
   }, [user?.id])
 
-  // Mezclar tokens con tenencias del usuario (qty, valueARS=qty*price)
+  // Mezclar tokens con tenencias del usuario
   const tokensView = useMemo(()=>{
     const merged = tokens.map(t => {
       const tid = Number(t.tokenId)
@@ -292,13 +297,12 @@ export default function Wallet(){
     return arr
   }, [q, tokensView, hideSmall])
 
-  // --------- NUEVA FUNCIÓN: Transferir ---------
-  async function handleTransfer(){
-    // limpiamos estados visuales previos
+  // Paso 1 del flujo: validar CBU. Si ok -> abrir modal.
+  async function startTransferFlow(){
     setTransferErr('')
     setTransferMsg('')
+    setModalErr('')
 
-    // chequeos básicos
     if (!user?.id) {
       setTransferErr('No hay usuario autenticado.')
       return
@@ -310,7 +314,6 @@ export default function Wallet(){
 
     setTransferLoading(true)
     try {
-      // 1. check CBU
       const checkUrl = `/users/${user.id}/check-cbu/`
       if (import.meta.env.DEV) {
         console.log('[WALLET][TRANSFER] GET', checkUrl)
@@ -324,28 +327,77 @@ export default function Wallet(){
         return
       }
 
-      // 2. withdraw
-      const withdrawUrl = `/finance/withdraw-to-cbu/`
-      if (import.meta.env.DEV) {
-        console.log('[WALLET][TRANSFER] POST', withdrawUrl)
-      }
-      const withdrawRes = await authService.client.post(withdrawUrl, {
-        // si tu backend más adelante pide amount u otro dato, agregalo acá
-      })
-
-      if (withdrawRes?.data?.message) {
-        setTransferMsg(withdrawRes.data.message)
-      } else if (withdrawRes?.data?.error) {
-        setTransferErr(withdrawRes.data.error)
-      } else {
-        setTransferMsg('Transferencia solicitada.')
-      }
+      // tiene CBU -> abrimos el modal
+      setTransferAmount('') // limpio input
+      setShowTransferModal(true)
     } catch (e){
-      const fallback = e?.response?.data?.error || e?.response?.data?.message || e.message || 'No se pudo completar la transferencia.'
+      const fallback = e?.response?.data?.error || e?.response?.data?.message || e.message || 'No se pudo validar el CBU.'
       setTransferErr(fallback)
     } finally {
       setTransferLoading(false)
     }
+  }
+
+  // Paso 2 del flujo: confirmar transferencia desde el modal
+  async function confirmTransfer(){
+    setModalErr('')
+    setTransferErr('')
+    setTransferMsg('')
+
+    const raw = transferAmount.trim()
+    // si el usuario no puso nada, error local
+    if (!raw) {
+      setModalErr('Ingresá un monto.')
+      return
+    }
+
+    const num = Number(raw.replace(',', '.'))
+    if (!Number.isFinite(num) || num <= 0) {
+      setModalErr('Monto inválido.')
+      return
+    }
+
+    if (num > cashARS) {
+      setModalErr('No podés transferir más que tu saldo disponible.')
+      return
+    }
+
+    setTransferLoading(true)
+    try {
+      const withdrawUrl = `/finance/withdraw-to-cbu/`
+      const body = {
+        user_id: user.id,
+        amount: String(num.toFixed(2)), // "1000.00"
+      }
+
+      if (import.meta.env.DEV) {
+        console.log('[WALLET][TRANSFER] POST', withdrawUrl, body)
+      }
+
+      const withdrawRes = await authService.client.post(withdrawUrl, body)
+
+      if (withdrawRes?.data?.message) {
+        setTransferMsg(withdrawRes.data.message)
+        setShowTransferModal(false)
+      } else if (withdrawRes?.data?.error) {
+        setModalErr(withdrawRes.data.error) // error visible en modal
+      } else {
+        setTransferMsg('Transferencia solicitada.')
+        setShowTransferModal(false)
+      }
+    } catch (e){
+      const fallback = e?.response?.data?.error || e?.response?.data?.message || e.message || 'No se pudo completar la transferencia.'
+      setModalErr(fallback)
+    } finally {
+      setTransferLoading(false)
+    }
+  }
+
+  // helper para botón "Transferir todo"
+  function fillAllBalance(){
+    // usamos cashARS actual
+    setTransferAmount(String(Number(cashARS).toFixed(2)))
+    setModalErr('')
   }
 
   return (
@@ -384,7 +436,7 @@ export default function Wallet(){
               error={cashError}
               masked={!showAmounts}
               onToggle={()=> setShowAmounts(v => !v)}
-              onTransfer={handleTransfer}
+              onTransfer={startTransferFlow}
               transferLoading={transferLoading}
             />
           </div>
@@ -415,7 +467,7 @@ export default function Wallet(){
           </div>
         </div>
 
-        {/* Mensajes de transferencia */}
+        {/* Mensajes globales de resultado / error */}
         {(transferErr || transferMsg) && (
           <div
             className={[
@@ -475,7 +527,104 @@ export default function Wallet(){
           )}
         </div>
       </div>
+
+      {/* MODAL TRANSFERENCIA */}
+      {showTransferModal && (
+        <TransferModal
+          balance={cashARS}
+          amount={transferAmount}
+          setAmount={setTransferAmount}
+          onClose={()=>{ if(!transferLoading){ setShowTransferModal(false); } }}
+          onConfirm={confirmTransfer}
+          onAll={fillAllBalance}
+          errorMsg={modalErr}
+          loading={transferLoading}
+        />
+      )}
     </section>
+  )
+}
+
+/* -------------------- Modal de Transferencia -------------------- */
+function TransferModal({ balance, amount, setAmount, onClose, onConfirm, onAll, errorMsg, loading }){
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+
+      {/* card */}
+      <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white/80 ring-1 ring-slate-200 shadow-xl p-6 space-y-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900">Transferir fondos</h2>
+            <p className="text-sm text-slate-600">
+              Ingresá el monto a transferir a tu CBU registrado.
+            </p>
+          </div>
+          <button
+            className="text-slate-400 hover:text-slate-600"
+            onClick={onClose}
+            disabled={loading}
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="text-sm text-slate-600 bg-slate-50 rounded-xl border border-slate-200 px-4 py-3">
+          Saldo disponible:&nbsp;
+          <span className="font-semibold text-slate-900">${fmt(balance)}</span>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Monto a transferir (ARS)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="input w-full"
+            placeholder="0.00"
+            value={amount}
+            onChange={e=>setAmount(e.target.value)}
+            disabled={loading}
+          />
+
+          <button
+            type="button"
+            onClick={onAll}
+            disabled={loading}
+            className="text-xs text-indigo-600 font-semibold hover:underline"
+          >
+            Transferir todo (${fmt(balance)})
+          </button>
+
+          {errorMsg && (
+            <div className="text-sm text-red-600 font-medium">
+              {errorMsg}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="btn btn-outline flex-1 rounded-xl disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="btn btn-primary flex-1 rounded-xl disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Procesando…' : 'Confirmar transferencia'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -582,13 +731,13 @@ function BalanceBox({
       <div className="text-2xl font-extrabold">{renderContent()}</div>
       <div className="text-[11px] tracking-wider uppercase text-slate-500">Saldo en pesos</div>
 
-      {/* Botón Transferir */}
+      {/* Botón Transferir (abre flujo) */}
       <button
         onClick={onTransfer}
         disabled={transferLoading || loading || !!error}
         className="btn btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {transferLoading ? 'Transfiriendo…' : 'Transferir'}
+        {transferLoading ? 'Validando…' : 'Transferir'}
       </button>
     </div>
   )
