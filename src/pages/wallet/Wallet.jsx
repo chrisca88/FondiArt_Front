@@ -311,7 +311,7 @@ export default function Wallet(){
     setTransferLoading(true)
     try {
       // 1. check CBU
-      const checkUrl = `/api/v1/users/${user.id}/check-cbu/`
+      const checkUrl = `/users/${user.id}/check-cbu/`
       if (import.meta.env.DEV) {
         console.log('[WALLET][TRANSFER] GET', checkUrl)
       }
@@ -325,7 +325,7 @@ export default function Wallet(){
       }
 
       // 2. withdraw
-      const withdrawUrl = `/api/v1/finance/withdraw-to-cbu/`
+      const withdrawUrl = `/finance/withdraw-to-cbu/`
       if (import.meta.env.DEV) {
         console.log('[WALLET][TRANSFER] POST', withdrawUrl)
       }
