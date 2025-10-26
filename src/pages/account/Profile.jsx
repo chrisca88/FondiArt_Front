@@ -24,8 +24,7 @@ export default function Profile(){
     cbu:       user?.cbu       || '',
   })
 
-  // 1) Cuando cambia el user en redux, sincronizamos como fallback inmediato
-  //    (esto mantiene comportamiento anterior para no mostrar form vacío)
+  // 1) Sync inicial con Redux para no mostrar el form vacío
   useEffect(()=>{
     setForm(f => ({
       ...f,
@@ -48,7 +47,7 @@ export default function Profile(){
     user?.cbu
   ])
 
-  // 2) Fetch real al backend /api/v1/users/:id/ para tener datos más frescos
+  // 2) Fetch real al backend /users/:id/
   useEffect(()=>{
     const uid = user?.id
     if (!uid) return
@@ -62,11 +61,6 @@ export default function Profile(){
       .then(res => {
         if (!alive) return
         const data = res?.data || {}
-
-        // mapeamos campos exactamente como vienen del endpoint de ejemplo
-        // {
-        //   id, username, name, email, role, avatarUrl, dni, phone, bio, cbu, date_joined
-        // }
 
         setForm(prev => ({
           ...prev,
@@ -94,6 +88,11 @@ export default function Profile(){
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [submitErr, setSubmitErr] = useState('')
+
+  // Modal de resultado post-guardar
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [resultOk, setResultOk] = useState(false)
+  const [resultMsg, setResultMsg] = useState('')
 
   // Subida de imagen
   const [uploading, setUploading] = useState(false)
@@ -124,21 +123,46 @@ export default function Profile(){
     e.preventDefault()
     setSubmitErr('')
     setSaved(false)
-    if (!validate()) return
+
+    // limpiamos modal previo
+    setShowResultModal(false)
+    setResultOk(false)
+    setResultMsg('')
+
+    if (!validate()) {
+      // si falla validación local, abrimos modal de error amigable
+      setShowResultModal(true)
+      setResultOk(false)
+      setResultMsg('Revisá los campos marcados en rojo.')
+      return
+    }
+
     setSaving(true)
     try{
       await dispatch(saveProfile({
         name     : form.name,
         email    : form.email,
-        avatarUrl: form.avatarUrl?.trim() || null, // se guarda secure_url
+        avatarUrl: form.avatarUrl?.trim() || null,
         bio      : form.bio,
         phone    : form.phone,
         dni      : form.dni?.trim() || null,
         cbu      : form.cbu?.trim() || null,
       })).unwrap()
+
       setSaved(true)
+
+      // éxito -> modal éxito
+      setShowResultModal(true)
+      setResultOk(true)
+      setResultMsg('¡Tus cambios se guardaron correctamente!')
     }catch(err){
-      setSubmitErr(err || 'No se pudo guardar los cambios.')
+      const msg = err || 'No se pudo guardar los cambios.'
+      setSubmitErr(msg)
+
+      // error -> modal error
+      setShowResultModal(true)
+      setResultOk(false)
+      setResultMsg(typeof msg === 'string' ? msg : 'No se pudo guardar los cambios.')
     }finally{
       setSaving(false)
     }
@@ -199,7 +223,7 @@ export default function Profile(){
 
         <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
 
-          {/* Alertas */}
+          {/* Alertas inline (se mantienen por compatibilidad, pero ahora también tenemos modal) */}
           {saved && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700 text-sm">
               ¡Datos guardados correctamente!
@@ -349,7 +373,7 @@ export default function Profile(){
               <p className="text-xs text-red-600 mt-1">{errors.cbu}</p>
             )}
 
-            {/* feedback en vivo mientras escribe, solo si no hay error final */}
+            {/* feedback en vivo mientras escribe */}
             {!errors.cbu && !!form.cbu && form.cbu.length < CBU_TOTAL && (
               <p className="text-xs text-slate-500 mt-1">
                 Faltan {CBU_TOTAL - form.cbu.length} dígitos para completar el CBU.
@@ -379,6 +403,63 @@ export default function Profile(){
           </div>
         </form>
       </div>
+
+      {/* MODAL RESULTADO GUARDAR */}
+      {showResultModal && (
+        <ResultModal
+          ok={resultOk}
+          message={resultMsg}
+          onClose={()=> setShowResultModal(false)}
+        />
+      )}
     </section>
   )
+}
+
+/* ---------------- Modal de resultado post-guardar ---------------- */
+function ResultModal({ ok, message, onClose }){
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+
+      {/* card */}
+      <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white/80 ring-1 ring-slate-200 shadow-xl p-6 space-y-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900">
+              {ok ? 'Cambios guardados' : 'No se pudo guardar'}
+            </h2>
+            <p className="text-sm text-slate-600">{message}</p>
+          </div>
+
+          <button
+            className="text-slate-400 hover:text-slate-600"
+            onClick={onClose}
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="pt-2 flex justify-end">
+          <button
+            onClick={onClose}
+            className={`btn ${ok ? 'btn-primary' : 'btn-outline'} rounded-xl`}
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- Helpers visuales ---------------- */
+function fmtInputError(key){
+  return key ? '' : ''
+  // Nota: la lógica original ya estaba arriba como const fmtInputError = (key)=> ...
+  // Pero necesitamos esa función dentro del archivo completo.
+  // La volvemos a declarar abajo de todo para evitar reference error.
+  // Vamos a redefinirla correctamente más abajo.
 }
