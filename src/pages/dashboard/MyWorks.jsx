@@ -28,8 +28,13 @@ export default function MyWorks(){
       .then(res => {
         if (!alive) return
         console.log('Artworks fetched successfully:', res.data)
-        // el backend devuelve un array directo, no {results: [...]}
-        setItems(res.data || [])
+
+        // Normalizamos siempre a array:
+        const payload = Array.isArray(res.data)
+          ? res.data
+          : (Array.isArray(res.data?.results) ? res.data.results : [])
+
+        setItems(payload)
         setLoading(false)
       })
       .catch(err => {
@@ -43,8 +48,11 @@ export default function MyWorks(){
     return ()=>{ alive = false }
   }, [user])
 
+  // Asegurarnos de que items sea un array antes de filtrar
+  const safeItems = Array.isArray(items) ? items : []
+
   // --- filtrado local basado en venta_directa ---
-  const filteredItems = items.filter(it => {
+  const filteredItems = safeItems.filter(it => {
     if (filterType === 'tokenized') {
       // tokenizada => venta_directa === false
       return it.venta_directa === false
@@ -102,14 +110,14 @@ export default function MyWorks(){
           </div>
         )}
 
-        {!loading && !error && items.length === 0 && (
+        {!loading && !error && safeItems.length === 0 && (
           <div className="card-surface p-10 text-center">
             <h3 className="text-xl font-bold">Todavía no publicaste obras</h3>
             <p className="text-slate-600 mt-1">Usá el botón “Publicar obra” para empezar.</p>
           </div>
         )}
 
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && safeItems.length > 0 && (
           <>
             {filteredItems.length === 0 ? (
               <div className="card-surface p-10 text-center">
@@ -148,8 +156,8 @@ function OwnerArtworkCard({ item, onStats }){
     rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700', title: 'Rechazada' },
     default: { text: item.status || 'Desconocido', className: 'bg-slate-100 text-slate-700', title: `Estado: ${item.status}` }
   }
-  // Ojo: en tu back el status viene "Approved", "Pending"... con mayúscula inicial.
-  // Para mapearlo usamos .toLowerCase()
+
+  // El backend manda "Approved", "Pending", etc. Lo pasamos a lowercase para mapear.
   const currentStatus = statusConfig[item.status?.toLowerCase?.()] || statusConfig.default
 
   let imageUrl = item.image;
