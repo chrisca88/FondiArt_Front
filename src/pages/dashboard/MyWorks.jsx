@@ -144,18 +144,18 @@ function OwnerArtworkCard({ item, onStats }){
           {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
         </div>
 
-        {/* 🔧 Ajuste estético: espaciado y adaptabilidad */}
-        <div className="flex flex-wrap gap-2 mt-3">
+        {/* 🔧 Ajuste estético final: ambos botones mismo ancho y estilo responsive */}
+        <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <Link
             to={`/publicar/${item.id}`}
-            className="btn btn-outline flex-1 rounded-xl"
+            className="btn btn-outline w-full sm:w-1/2 rounded-xl text-center"
             title="Editar publicación"
           >
             Editar publicación
           </Link>
           <button
             onClick={onStats}
-            className="btn btn-primary flex-1 sm:flex-none rounded-xl"
+            className="btn btn-primary w-full sm:w-1/2 rounded-xl text-center"
           >
             Ver estadísticas
           </button>
