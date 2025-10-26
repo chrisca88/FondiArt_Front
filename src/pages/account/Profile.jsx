@@ -119,19 +119,18 @@ export default function Profile(){
     return Object.keys(errs).length === 0
   }
 
-  const onSubmit = async (e)=>{
-    e.preventDefault()
+  // NUEVO: manejamos el click del botón guardar acá (no usamos onSubmit del <form>)
+  const handleSaveClick = async ()=>{
     setSubmitErr('')
     setSaved(false)
 
-    // limpiamos modal previo
-    setShowResultModal(false)
+    // reseteamos/mostramos modal inmediatamente con estado "guardando..."
+    setShowResultModal(true)
     setResultOk(false)
-    setResultMsg('')
+    setResultMsg('Guardando cambios…')
 
+    // validación local
     if (!validate()) {
-      // si falla validación local, abrimos modal de error amigable
-      setShowResultModal(true)
       setResultOk(false)
       setResultMsg('Revisá los campos marcados en rojo.')
       return
@@ -151,16 +150,14 @@ export default function Profile(){
 
       setSaved(true)
 
-      // éxito -> modal éxito
-      setShowResultModal(true)
+      // éxito -> actualizamos el modal existente
       setResultOk(true)
       setResultMsg('¡Tus cambios se guardaron correctamente!')
     }catch(err){
       const msg = err || 'No se pudo guardar los cambios.'
       setSubmitErr(msg)
 
-      // error -> modal error
-      setShowResultModal(true)
+      // error -> actualizamos el modal existente
       setResultOk(false)
       setResultMsg(typeof msg === 'string' ? msg : 'No se pudo guardar los cambios.')
     }finally{
@@ -196,13 +193,11 @@ export default function Profile(){
     }
   }
 
-  // 👇 ESTA es la versión buena, la mantenemos DENTRO del componente
   const fmtInputError = (key)=> errors[key] ? '!border-red-300 focus:!ring-red-200' : ''
 
   const isArtist = String(user?.role).toLowerCase() === 'artist'
   const previewSrc = localPreview || form.avatarUrl
 
-  // Feedback en vivo para el CBU
   const CBU_TOTAL = 22
 
   // Logs dev
@@ -223,7 +218,8 @@ export default function Profile(){
           <p className="lead mt-2 max-w-2xl">Actualizá tu información básica y tu foto de perfil.</p>
         </div>
 
-        <form onSubmit={onSubmit} className="card-surface p-6 max-w-2xl space-y-5">
+        {/* Importante: el form ya NO hace submit "real" */}
+        <form onSubmit={e=>e.preventDefault()} className="card-surface p-6 max-w-2xl space-y-5">
 
           {/* Alertas inline (legacy) */}
           {saved && (
@@ -391,6 +387,8 @@ export default function Profile(){
 
           <div className="pt-2">
             <button
+              type="button"
+              onClick={handleSaveClick}
               className="btn btn-primary btn-lg"
               disabled={saving || status === 'loading' || uploading || profileLoading}
             >
@@ -430,7 +428,7 @@ function ResultModal({ ok, message, onClose }){
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-xl font-extrabold text-slate-900">
-              {ok ? 'Cambios guardados' : 'No se pudo guardar'}
+              {ok ? 'Cambios guardados' : 'Estado de guardado'}
             </h2>
             <p className="text-sm text-slate-600">{message}</p>
           </div>
