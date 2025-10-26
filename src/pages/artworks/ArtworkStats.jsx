@@ -83,7 +83,7 @@ export default function ArtworkStats(){
         {/* KPIs */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Kpi label="Unidades vendidas" value={`${kpi.sold}/${data.fractionsTotal} (${kpi.pct}%)`} />
-          <Kpi label="Ingresos brutos (mock)" value={`$${fmt(kpi.revenue)}`} />
+          <Kpi label="Ingresos brutos" value={`$${fmt(kpi.revenue)}`} />
           <Kpi label="Precio por fracción" value={`$${fmt(kpi.unit)}`} />
           <Kpi label="Promedio diario" value={`${kpi.dailyAvg.toFixed(2)} u/día`} />
         </div>
@@ -101,7 +101,7 @@ export default function ArtworkStats(){
 
         {/* Gráfico simple (SVG) */}
         <div className="card-surface p-6">
-          <h3 className="font-bold mb-3">Historial de ventas (últimos días) – mock</h3>
+          <h3 className="font-bold mb-3">Historial de ventas (últimos días)</h3>
           <Sparkline data={series} />
           <div className="mt-3 text-sm text-slate-600">
             Este gráfico es demostrativo (datos generados localmente).
