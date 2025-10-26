@@ -39,6 +39,7 @@ export default function Wallet(){
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferErr, setTransferErr] = useState('')
   const [transferMsg, setTransferMsg] = useState('')
+  const [needsCbu, setNeedsCbu] = useState(false) // <--- NUEVO
 
   // Modal de transferencia
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -302,6 +303,7 @@ export default function Wallet(){
     setTransferErr('')
     setTransferMsg('')
     setModalErr('')
+    setNeedsCbu(false) // <-- reseteamos bandera
 
     if (!user?.id) {
       setTransferErr('No hay usuario autenticado.')
@@ -322,6 +324,8 @@ export default function Wallet(){
       const hasCbu = checkRes?.data?.has_cbu
 
       if (!hasCbu) {
+        // mensaje mejorado con CTA al perfil
+        setNeedsCbu(true)
         setTransferErr('Necesitás cargar tu CBU en tu perfil antes de poder retirar.')
         setTransferLoading(false)
         return
@@ -376,21 +380,20 @@ export default function Wallet(){
       const withdrawRes = await authService.client.post(withdrawUrl, body)
 
       if (withdrawRes?.data?.error) {
-        // error devuelto por el backend (ej: fondos insuficientes)
+        // error backend
         setModalErr(withdrawRes.data.error)
       } else {
-        // éxito (o caso sin error explícito)
-        // 1. mensaje en castellano
+        // éxito
         const successMsg = 'Transferencia realizada con éxito. El monto será acreditado en tu CBU.'
         setTransferMsg(successMsg)
 
-        // 2. bajar el saldo local inmediatamente
+        // descontar saldo local
         setCashARS(prev => {
           const next = Number(prev) - num
           return next < 0 ? 0 : next
         })
 
-        // 3. cerrar modal
+        // cerrar modal
         setShowTransferModal(false)
       }
     } catch (e){
@@ -484,7 +487,23 @@ export default function Wallet(){
                 : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
             ].join(' ')}
           >
-            {transferErr || transferMsg}
+            {transferErr ? (
+              needsCbu ? (
+                <>
+                  Necesitás cargar tu CBU en tu perfil antes de poder retirar.{' '}
+                  <button
+                    className="underline text-indigo-600 font-semibold"
+                    onClick={()=> navigate('/cuenta/perfil')}
+                  >
+                    Hacé click acá para cargarlo.
+                  </button>
+                </>
+              ) : (
+                transferErr
+              )
+            ) : (
+              transferMsg
+            )}
           </div>
         )}
 
