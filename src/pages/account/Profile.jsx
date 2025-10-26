@@ -115,6 +115,11 @@ export default function Profile(){
   const fmtInputError = (key)=> errors[key] ? '!border-red-300 focus:!ring-red-200' : ''
   const previewSrc = localPreview || form.avatarUrl
 
+  // Feedback en vivo para el CBU
+  const cbuLen = (form.cbu || '').length
+  const CBU_TOTAL = 22
+  const cbuDigitsLeft = CBU_TOTAL - cbuLen
+
   // Logs útiles para diagnosticar “se desloguea”
   useEffect(()=>{
     if (import.meta.env.DEV) {
@@ -254,7 +259,24 @@ export default function Profile(){
               onChange={(e)=> onChange({ target: { name: 'cbu', value: e.target.value.replace(/[^\d]/g,'') } })}
               maxLength={22}
             />
-            {errors.cbu && <p className="text-xs text-red-600 mt-1">{errors.cbu}</p>}
+
+            {/* mensaje de error oficial si no cumple validación */}
+            {errors.cbu && (
+              <p className="text-xs text-red-600 mt-1">{errors.cbu}</p>
+            )}
+
+            {/* feedback en vivo de longitud, solo si no hay error */}
+            {!errors.cbu && !!cbuLen && cbuLen < CBU_TOTAL && (
+              <p className="text-xs text-slate-500 mt-1">
+                Faltan {CBU_TOTAL - cbuLen} dígitos para completar el CBU.
+              </p>
+            )}
+
+            {!errors.cbu && cbuLen === CBU_TOTAL && (
+              <p className="text-xs text-emerald-600 font-medium mt-1">
+                CBU completo ✓
+              </p>
+            )}
           </div>
 
           <div className="pt-2">
