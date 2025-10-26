@@ -345,7 +345,6 @@ export default function Wallet(){
     setTransferMsg('')
 
     const raw = transferAmount.trim()
-    // si el usuario no puso nada, error local
     if (!raw) {
       setModalErr('Ingresá un monto.')
       return
@@ -376,13 +375,22 @@ export default function Wallet(){
 
       const withdrawRes = await authService.client.post(withdrawUrl, body)
 
-      if (withdrawRes?.data?.message) {
-        setTransferMsg(withdrawRes.data.message)
-        setShowTransferModal(false)
-      } else if (withdrawRes?.data?.error) {
-        setModalErr(withdrawRes.data.error) // error visible en modal
+      if (withdrawRes?.data?.error) {
+        // error devuelto por el backend (ej: fondos insuficientes)
+        setModalErr(withdrawRes.data.error)
       } else {
-        setTransferMsg('Transferencia solicitada.')
+        // éxito (o caso sin error explícito)
+        // 1. mensaje en castellano
+        const successMsg = 'Transferencia realizada con éxito. El monto será acreditado en tu CBU.'
+        setTransferMsg(successMsg)
+
+        // 2. bajar el saldo local inmediatamente
+        setCashARS(prev => {
+          const next = Number(prev) - num
+          return next < 0 ? 0 : next
+        })
+
+        // 3. cerrar modal
         setShowTransferModal(false)
       }
     } catch (e){
@@ -395,7 +403,6 @@ export default function Wallet(){
 
   // helper para botón "Transferir todo"
   function fillAllBalance(){
-    // usamos cashARS actual
     setTransferAmount(String(Number(cashARS).toFixed(2)))
     setModalErr('')
   }
