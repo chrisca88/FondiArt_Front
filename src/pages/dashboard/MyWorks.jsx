@@ -28,7 +28,8 @@ export default function MyWorks(){
       .then(res => {
         if (!alive) return
         console.log('Artworks fetched successfully:', res.data)
-        setItems(res.data.results || [])
+        // el backend devuelve un array directo, no {results: [...]}
+        setItems(res.data || [])
         setLoading(false)
       })
       .catch(err => {
@@ -42,17 +43,16 @@ export default function MyWorks(){
     return ()=>{ alive = false }
   }, [user])
 
-  // --- filtrado local ---
+  // --- filtrado local basado en venta_directa ---
   const filteredItems = items.filter(it => {
-    // preferimos un campo explícito del backend
-    const saleType = it.sale_type // "tokenized" | "direct" | undefined
-
-    // fallback heurístico por si el back todavía no manda sale_type
-    const guessTokenized = Number(it.fractionsTotal || 0) > 0
-    const effectiveType = saleType || (guessTokenized ? 'tokenized' : 'direct')
-
-    if (filterType === 'tokenized') return effectiveType === 'tokenized'
-    if (filterType === 'direct') return effectiveType === 'direct'
+    if (filterType === 'tokenized') {
+      // tokenizada => venta_directa === false
+      return it.venta_directa === false
+    }
+    if (filterType === 'direct') {
+      // compra directa => venta_directa === true
+      return it.venta_directa === true
+    }
     return true // 'all'
   })
 
@@ -137,8 +137,10 @@ export default function MyWorks(){
 }
 
 function OwnerArtworkCard({ item, onStats }){
-  const sold = item.fractionsTotal - item.fractionsLeft
-  const pct = Math.round(sold / (item.fractionsTotal || 1) * 100)
+  const sold = (item.fractionsTotal || 0) - (item.fractionsLeft || 0)
+  const pct = item.fractionsTotal
+    ? Math.round(sold / item.fractionsTotal * 100)
+    : 0
 
   const statusConfig = {
     pending: { text: 'Pendiente', className: 'bg-amber-100 text-amber-700', title: 'Pendiente de aprobación' },
@@ -146,7 +148,9 @@ function OwnerArtworkCard({ item, onStats }){
     rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700', title: 'Rechazada' },
     default: { text: item.status || 'Desconocido', className: 'bg-slate-100 text-slate-700', title: `Estado: ${item.status}` }
   }
-  const currentStatus = statusConfig[item.status] || statusConfig.default
+  // Ojo: en tu back el status viene "Approved", "Pending"... con mayúscula inicial.
+  // Para mapearlo usamos .toLowerCase()
+  const currentStatus = statusConfig[item.status?.toLowerCase?.()] || statusConfig.default
 
   let imageUrl = item.image;
   if (typeof imageUrl === 'string') {
@@ -170,24 +174,42 @@ function OwnerArtworkCard({ item, onStats }){
             {currentStatus.text}
           </span>
         </div>
+
         <div className="text-sm text-slate-600">
-          {new Date(item.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+          {new Date(item.createdAt).toLocaleDateString('es-ES', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
         </div>
 
-        <div className="mt-2">
-          <div className="flex justify-between text-xs text-slate-600 mb-1">
-            <span>Vendidas</span><span>{sold}/{item.fractionsTotal} ({pct}%)</span>
+        {/* Solo mostramos barra si es tokenizada (tiene fracciones) */}
+        {item.fractionsTotal ? (
+          <div className="mt-2">
+            <div className="flex justify-between text-xs text-slate-600 mb-1">
+              <span>Vendidas</span>
+              <span>{sold}/{item.fractionsTotal} ({pct}%)</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-blue-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-indigo-500 to-blue-500" style={{ width: `${pct}%` }} />
+        ) : (
+          <div className="mt-2 text-xs text-slate-600">
+            <span>Precio: ${Number(item.price || 0).toLocaleString('es-AR')}</span>
           </div>
-        </div>
+        )}
 
         <div className="text-xs">
           <Link to={`/obra/${item.id}`} className="text-indigo-600 hover:underline">
             Ver obra
           </Link>
-          {item.status === 'pending' && <span className="text-slate-500"> · (aún no visible en marketplace)</span>}
+          {item.status?.toLowerCase?.() === 'pending' && (
+            <span className="text-slate-500"> · (aún no visible en marketplace)</span>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
@@ -244,7 +266,6 @@ function SegmentedControl({ value, onChange, options }){
               active
                 ? 'bg-indigo-600 text-white'
                 : 'text-slate-700 hover:bg-white',
-              // bordes internos entre tabs
               idx !== options.length - 1 ? 'border-r border-slate-300' : ''
             ].join(' ')}
           >
