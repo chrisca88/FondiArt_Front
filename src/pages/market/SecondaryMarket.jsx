@@ -5,8 +5,8 @@ import { listListings, createListing, cancelListing, buyListing } from '../../se
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
-// >>> MODIFICACIÓN: necesitamos la URL base para llamar al backend real
-import API_URL from '../../config.js'
+// usamos el mismo cliente axios autenticado que el resto del proyecto
+import authService from '../../services/authService.js'
 
 export default function SecondaryMarket(){
   const user = useSelector(s => s.auth.user)
@@ -21,7 +21,7 @@ export default function SecondaryMarket(){
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ artworkId: '', price: '', qty: 1 })
 
-  // >>> MODIFICACIÓN: tokens reales del usuario desde el backend
+  // Tokens reales del usuario (desde backend real)
   const [userTokens, setUserTokens] = useState([])
   const [tokensLoading, setTokensLoading] = useState(false)
   const [tokensError, setTokensError] = useState('')
@@ -65,57 +65,56 @@ export default function SecondaryMarket(){
     )
   }, [q, listings])
 
-  // >>> MODIFICACIÓN:
-  // cuando se abre el modal (open === true), buscamos los tokens reales del usuario
+  // Cuando se abre el modal (open === true), buscamos los tokens reales del usuario autenticado
   useEffect(() => {
+    let alive = true
     async function fetchTokens() {
       if (!open) return
       try {
         setTokensLoading(true)
         setTokensError('')
 
-        // asumimos que user.id es el id del usuario y user.token es el bearer
-        const res = await fetch(
-          `${API_URL}/api/v1/finance/users/${user.id}/tokens/`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${user.token || ''}`
-            }
-          }
-        )
+        // Ej: GET /api/v1/finance/users/<user_id>/tokens/
+        // authService.client ya tiene baseURL (/api/v1) y el Authorization Bearer cargado
+        const res = await authService.client.get(`/finance/users/${user.id}/tokens/`)
+        if (!alive) return
 
-        if (!res.ok) {
-          throw new Error('No se pudieron obtener tus tokens')
-        }
-
-        const data = await res.json()
-        // data es array [{token_id, token_name, quantity}, ...]
+        const data = res?.data || []
         setUserTokens(Array.isArray(data) ? data : [])
       } catch (err) {
-        setTokensError(err.message || 'Error al cargar tokens')
+        if (!alive) return
+        const msg =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error al cargar tokens'
+        setTokensError(msg)
         setUserTokens([])
       } finally {
+        if (!alive) return
         setTokensLoading(false)
       }
     }
     fetchTokens()
-  }, [open, user])
+
+    return ()=>{ alive = false }
+  }, [open, user?.id])
 
   async function handleCreate(e){
     e.preventDefault()
 
-    // >>> MODIFICACIÓN:
-    // en vez de buscar en mySellables por artworkId, ahora buscamos el token seleccionado
-    const selectedToken = userTokens.find(t => String(t.token_id) === String(form.artworkId))
+    // buscamos el token elegido en la lista real
+    const selectedToken = userTokens.find(
+      t => String(t.token_id) === String(form.artworkId)
+    )
 
-    if (!selectedToken) return showNotice('Seleccioná un token válido', 'err')
+    if (!selectedToken) {
+      return showNotice('Seleccioná un token válido', 'err')
+    }
 
     try{
       await createListing({
         user,
-        // mapeo mínimo para no romper el mock existente:
+        // mapeo para encajar con la lógica existente de mockMarket:
         artworkId: selectedToken.token_id,
         symbol: selectedToken.token_name,
         title: selectedToken.token_name,
@@ -276,7 +275,6 @@ export default function SecondaryMarket(){
                 <label className="block">
                   <span className="block text-sm font-medium mb-1">Token</span>
 
-                  {/* >>> MODIFICACIÓN: reemplazamos el origen de opciones */}
                   <select
                     className="select w-full"
                     value={form.artworkId}
