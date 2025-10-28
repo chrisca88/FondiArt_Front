@@ -37,6 +37,9 @@ export default function SecondaryMarket(){
   const [confirm, setConfirm] = useState({ open:false, mode:null, listing:null, loading:false })
   const [buyQty, setBuyQty] = useState(1)
 
+  // <-- NUEVO: error mostrado dentro del modal de confirmación -->
+  const [modalError, setModalError] = useState('')
+
   // Avisos simples
   const [notice, setNotice] = useState(null)
   const showNotice = (msg, type='ok') => {
@@ -179,10 +182,13 @@ export default function SecondaryMarket(){
     setConfirm({ open:true, mode:'cancel', listing, loading:false })
   const askBuy = (listing) => {
     setBuyQty(1)
+    setModalError('') // limpiamos error previo al abrir modal
     setConfirm({ open:true, mode:'buy', listing, loading:false })
   }
-  const closeConfirm = () =>
+  const closeConfirm = () => {
+    setModalError('') // limpiamos error al cerrar modal
     setConfirm({ open:false, mode:null, listing:null, loading:false })
+  }
 
   // Ejecutar confirmación (compra / cancelar)
   async function doConfirm(){
@@ -197,11 +203,13 @@ export default function SecondaryMarket(){
         const totalWithFee = subtotal + fee
 
         if (totalWithFee > accountBalance) {
-          showNotice('Saldo insuficiente para completar la compra (incluye 2% de comisión).', 'err')
+          // mostramos el error DENTRO DEL MODAL, no como notice externo
+          setModalError('Saldo insuficiente para completar la compra (incluye 2% de comisión).')
           return
         }
 
         setConfirm(c=>({ ...c, loading:true }))
+        setModalError('')
 
         // COMPRAR via backend real
         await authService.client.post('/finance/buy-order/', {
@@ -227,7 +235,8 @@ export default function SecondaryMarket(){
       closeConfirm()
     }catch(err){
       setConfirm(c=>({ ...c, loading:false }))
-      showNotice(err?.response?.data?.message || err.message || 'Ocurrió un error', 'err')
+      // mostramos cualquier error del backend dentro del modal también
+      setModalError(err?.response?.data?.message || err.message || 'Ocurrió un error')
     }
   }
 
@@ -241,11 +250,11 @@ export default function SecondaryMarket(){
     ? Number(confirm.listing.price) * qtyNum
     : 0
 
-  // ---- NUEVO: comisión 2% y total final mostrado en el modal ----
+  // ---- comisión 2% y total final mostrado en el modal ----
   const feeRate = 0.02
   const buyFee = (confirm.mode === 'buy' && confirm.listing && qtyValid) ? buyTotal * feeRate : 0
   const grandTotal = (confirm.mode === 'buy' && confirm.listing && qtyValid) ? buyTotal + buyFee : 0
-  // ---------------------------------------------------------------
+  // --------------------------------------------------------
 
   // límite de cantidad para publicar en el modal, basado en lo que el usuario tiene
   const maxForSelectedToken = selectedToken ? Number(selectedToken.quantity || 0) : null
@@ -482,9 +491,25 @@ export default function SecondaryMarket(){
               </div>
 
               {confirm.mode === 'buy' && (
-                <div>
-                  <span className="font-medium">Total (incluye 2% de comisión): </span>
-                  {qtyValid ? `$${fmt(grandTotal)}` : <span className="text-slate-500">—</span>}
+                <div className="space-y-1">
+                  <div>
+                    <span className="font-medium">Subtotal:</span>{' '}
+                    {qtyValid ? `$${fmt(buyTotal)}` : <span className="text-slate-500">—</span>}
+                  </div>
+                  <div>
+                    <span className="font-medium">Comisión (2%):</span>{' '}
+                    {qtyValid ? `$${fmt(buyFee)}` : <span className="text-slate-500">—</span>}
+                  </div>
+                  <div>
+                    <span className="font-medium">Total final:</span>{' '}
+                    {qtyValid ? `$${fmt(grandTotal)}` : <span className="text-slate-500">—</span>}
+                  </div>
+
+                  {modalError && (
+                    <div className="text-xs text-red-600 font-medium mt-2">
+                      {modalError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
