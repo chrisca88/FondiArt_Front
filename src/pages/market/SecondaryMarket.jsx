@@ -51,12 +51,12 @@ export default function SecondaryMarket(){
       // Adaptamos cada orden a la forma que ya renderiza la tabla
       const mapped = raw.map(o => ({
         id: o.id,
-        symbol: `Token #${o.token}`,
-        title: `Token ID ${o.token}`,
+        symbol: o.token_symbol,
+        title: o.token_name,
         price: o.price,
         qty: o.quantity,
         sellerId: o.user,
-        sellerName: `Usuario ${o.user}`,
+        sellerName: o.user_name,
         status: o.status,
       }))
 
