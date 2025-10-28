@@ -5,6 +5,8 @@ import { listListings, createListing, cancelListing, buyListing } from '../../se
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
+// >>> MODIFICACIÓN: necesitamos la URL base para llamar al backend real
+import API_URL from '../../config.js'
 
 export default function SecondaryMarket(){
   const user = useSelector(s => s.auth.user)
@@ -18,6 +20,11 @@ export default function SecondaryMarket(){
   // Modal crear
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ artworkId: '', price: '', qty: 1 })
+
+  // >>> MODIFICACIÓN: tokens reales del usuario desde el backend
+  const [userTokens, setUserTokens] = useState([])
+  const [tokensLoading, setTokensLoading] = useState(false)
+  const [tokensError, setTokensError] = useState('')
 
   // Confirm dialog (comprar / cancelar)
   const [confirm, setConfirm] = useState({ open:false, mode:null, listing:null, loading:false })
@@ -58,21 +65,72 @@ export default function SecondaryMarket(){
     )
   }, [q, listings])
 
+  // >>> MODIFICACIÓN:
+  // cuando se abre el modal (open === true), buscamos los tokens reales del usuario
+  useEffect(() => {
+    async function fetchTokens() {
+      if (!open) return
+      try {
+        setTokensLoading(true)
+        setTokensError('')
+
+        // asumimos que user.id es el id del usuario y user.token es el bearer
+        const res = await fetch(
+          `${API_URL}/api/v1/finance/users/${user.id}/tokens/`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${user.token || ''}`
+            }
+          }
+        )
+
+        if (!res.ok) {
+          throw new Error('No se pudieron obtener tus tokens')
+        }
+
+        const data = await res.json()
+        // data es array [{token_id, token_name, quantity}, ...]
+        setUserTokens(Array.isArray(data) ? data : [])
+      } catch (err) {
+        setTokensError(err.message || 'Error al cargar tokens')
+        setUserTokens([])
+      } finally {
+        setTokensLoading(false)
+      }
+    }
+    fetchTokens()
+  }, [open, user])
+
   async function handleCreate(e){
     e.preventDefault()
-    const item = mySellables.find(i => i.artworkId === form.artworkId)
-    if (!item) return showNotice('Seleccioná un token válido', 'err')
+
+    // >>> MODIFICACIÓN:
+    // en vez de buscar en mySellables por artworkId, ahora buscamos el token seleccionado
+    const selectedToken = userTokens.find(t => String(t.token_id) === String(form.artworkId))
+
+    if (!selectedToken) return showNotice('Seleccioná un token válido', 'err')
+
     try{
       await createListing({
         user,
-        artworkId: item.artworkId,
-        symbol: item.symbol,
-        title: item.title,
+        // mapeo mínimo para no romper el mock existente:
+        artworkId: selectedToken.token_id,
+        symbol: selectedToken.token_name,
+        title: selectedToken.token_name,
         price: Number(form.price),
         qty: Number(form.qty || 1)
       })
+
       const [ls, pf] = await Promise.all([listListings(), getPortfolio(user)])
-      setListings(ls); setPortfolio(pf); setOpen(false); setForm({ artworkId:'', price:'', qty:1 })
+      setListings(ls)
+      setPortfolio(pf)
+
+      // cerrar modal y limpiar form
+      setOpen(false)
+      setForm({ artworkId:'', price:'', qty:1 })
+
       showNotice('Publicación creada')
     }catch(err){
       showNotice(err.message || 'Error al publicar', 'err')
@@ -139,7 +197,7 @@ export default function SecondaryMarket(){
             <p className="lead mt-2 max-w-2xl">Compra y venta entre usuarios de tokens de obras.</p>
           </div>
 
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs uppercase text-slate-500">Tu saldo</div>
               <div className="text-lg font-extrabold">${fmt(portfolio.cashARS)}</div>
@@ -217,18 +275,32 @@ export default function SecondaryMarket(){
               <form onSubmit={handleCreate} className="space-y-4">
                 <label className="block">
                   <span className="block text-sm font-medium mb-1">Token</span>
+
+                  {/* >>> MODIFICACIÓN: reemplazamos el origen de opciones */}
                   <select
                     className="select w-full"
                     value={form.artworkId}
                     onChange={e=> setForm(f=>({ ...f, artworkId: e.target.value }))}
+                    disabled={tokensLoading}
                   >
-                    <option value="">Seleccionar…</option>
-                    {(portfolio.items || []).filter(it=>Number(it.qty)>0).map(it=>(
-                      <option key={it.artworkId} value={it.artworkId}>
-                        {it.symbol} — {it.title} (tenés {it.qty})
+                    <option value="">
+                      {tokensLoading
+                        ? 'Cargando...'
+                        : tokensError
+                          ? 'Error al cargar tokens'
+                          : 'Seleccionar…'}
+                    </option>
+
+                    {!tokensLoading && !tokensError && userTokens.map(t => (
+                      <option key={t.token_id} value={t.token_id}>
+                        {t.token_name} (tenés {t.quantity})
                       </option>
                     ))}
                   </select>
+
+                  {tokensError && (
+                    <div className="text-xs text-red-600 mt-1">{tokensError}</div>
+                  )}
                 </label>
 
                 <div className="grid grid-cols-2 gap-4">
