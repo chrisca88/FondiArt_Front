@@ -25,6 +25,11 @@ export default function SecondaryMarket(){
   const [tokensLoading, setTokensLoading] = useState(false)
   const [tokensError, setTokensError] = useState('')
 
+  // token seleccionado actualmente en el modal
+  const selectedToken = useMemo(() => {
+    return userTokens.find(t => String(t.token_id) === String(form.artworkId))
+  }, [userTokens, form.artworkId])
+
   // Confirm dialog (comprar / cancelar)
   const [confirm, setConfirm] = useState({ open:false, mode:null, listing:null, loading:false })
   const [buyQty, setBuyQty] = useState(1)
@@ -80,12 +85,12 @@ export default function SecondaryMarket(){
         // GET /api/v1/finance/users/<user_id>/tokens/
         // authService.client ya tiene baseURL (/api/v1) y el Authorization Bearer
         const res = await authService.client.get(`/finance/users/${user.id}/tokens/`)
-
         if (!alive) return
 
-        // IMPORTANTE: ahora extraemos "results"
+        // El endpoint devuelve objeto paginado con { results: [...] }
         const data = res?.data?.results || []
 
+        // data: [{ token_id, token_name, quantity, unit_price }, ...]
         setUserTokens(Array.isArray(data) ? data : [])
       } catch (err) {
         if (!alive) return
@@ -108,24 +113,27 @@ export default function SecondaryMarket(){
   async function handleCreate(e){
     e.preventDefault()
 
-    // buscamos el token elegido en la lista real
-    const selectedToken = userTokens.find(
-      t => String(t.token_id) === String(form.artworkId)
-    )
-
-    if (!selectedToken) {
+    const chosen = selectedToken
+    if (!chosen) {
       return showNotice('Seleccioná un token válido', 'err')
+    }
+
+    // validación: no puede publicar más cantidad de la que tiene
+    const desiredQty = Number(form.qty || 1)
+    const maxAllowed = Number(chosen.quantity || 0)
+    if (desiredQty < 1 || desiredQty > maxAllowed){
+      return showNotice('Cantidad inválida (supera lo que tenés)', 'err')
     }
 
     try{
       await createListing({
         user,
         // adaptamos a lo que espera el mock
-        artworkId: selectedToken.token_id,
-        symbol: selectedToken.token_name,
-        title: selectedToken.token_name,
+        artworkId: chosen.token_id,
+        symbol: chosen.token_name,
+        title: chosen.token_name,
         price: Number(form.price),
-        qty: Number(form.qty || 1)
+        qty: desiredQty
       })
 
       const [ls, pf] = await Promise.all([listListings(), getPortfolio(user)])
@@ -172,13 +180,16 @@ export default function SecondaryMarket(){
 
   const fmt = (n)=> Number(n||0).toLocaleString('es-AR')
 
-  // Validaciones compra parcial
+  // Validaciones compra parcial (confirm dialog existente)
   const maxQty = confirm.listing ? Number(confirm.listing.qty) : 1
   const qtyNum = Math.floor(Number(buyQty) || 0)
   const qtyValid = confirm.mode !== 'buy' || (qtyNum >= 1 && qtyNum <= maxQty)
   const buyTotal = (confirm.mode === 'buy' && confirm.listing && qtyValid)
     ? Number(confirm.listing.price) * qtyNum
     : 0
+
+  // límite de cantidad para publicar en el modal, basado en lo que el usuario tiene
+  const maxForSelectedToken = selectedToken ? Number(selectedToken.quantity || 0) : null
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -305,6 +316,13 @@ export default function SecondaryMarket(){
                   {tokensError && (
                     <div className="text-xs text-red-600 mt-1">{tokensError}</div>
                   )}
+
+                  {/* Texto con precio de adquisición basado en unit_price */}
+                  {selectedToken && !tokensError && (
+                    <div className="mt-2 text-xs text-slate-600">
+                      El precio de adquisición de tus tokens fue ${Number(selectedToken.unit_price || 0).toLocaleString('es-AR')} ARS
+                    </div>
+                  )}
                 </label>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -322,10 +340,31 @@ export default function SecondaryMarket(){
                     <span className="block text-sm font-medium mb-1">Cantidad</span>
                     <input
                       className="input w-full"
-                      type="number" step="1" min="1"
+                      type="number"
+                      step="1"
+                      min="1"
+                      max={maxForSelectedToken ?? undefined}
                       value={form.qty}
-                      onChange={e=> setForm(f=>({ ...f, qty: e.target.value }))}
+                      onChange={e=> {
+                        const raw = e.target.value
+                        let next = raw
+
+                        // no permitir más que lo que tiene el usuario
+                        if (maxForSelectedToken != null) {
+                          const asNum = Number(raw)
+                          if (!Number.isNaN(asNum) && asNum > maxForSelectedToken) {
+                            next = String(maxForSelectedToken)
+                          }
+                        }
+
+                        setForm(f=>({ ...f, qty: next }))
+                      }}
                     />
+                    {maxForSelectedToken != null && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        Máximo disponible: {maxForSelectedToken}
+                      </div>
+                    )}
                   </label>
                 </div>
 
