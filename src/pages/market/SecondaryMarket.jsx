@@ -5,7 +5,6 @@ import { listListings, createListing, cancelListing, buyListing } from '../../se
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
-// usamos el mismo cliente axios autenticado que el resto del proyecto
 import authService from '../../services/authService.js'
 
 export default function SecondaryMarket(){
@@ -36,6 +35,7 @@ export default function SecondaryMarket(){
     setNotice({ msg, type }); setTimeout(()=> setNotice(null), 1600)
   }
 
+  // Carga inicial de publicaciones y portfolio
   useEffect(()=>{
     let alive = true
     async function load(){
@@ -53,7 +53,10 @@ export default function SecondaryMarket(){
     return ()=>{ alive = false }
   }, [user])
 
-  const mySellables = useMemo(()=> (portfolio.items || []).filter(it => Number(it.qty) > 0), [portfolio])
+  const mySellables = useMemo(
+    () => (portfolio.items || []).filter(it => Number(it.qty) > 0),
+    [portfolio]
+  )
 
   const filtered = useMemo(()=>{
     const s = q.trim().toLowerCase()
@@ -65,7 +68,7 @@ export default function SecondaryMarket(){
     )
   }, [q, listings])
 
-  // Cuando se abre el modal (open === true), buscamos los tokens reales del usuario autenticado
+  // Cuando se abre el modal, buscamos los tokens reales del usuario autenticado
   useEffect(() => {
     let alive = true
     async function fetchTokens() {
@@ -74,12 +77,15 @@ export default function SecondaryMarket(){
         setTokensLoading(true)
         setTokensError('')
 
-        // Ej: GET /api/v1/finance/users/<user_id>/tokens/
-        // authService.client ya tiene baseURL (/api/v1) y el Authorization Bearer cargado
+        // GET /api/v1/finance/users/<user_id>/tokens/
+        // authService.client ya tiene baseURL (/api/v1) y el Authorization Bearer
         const res = await authService.client.get(`/finance/users/${user.id}/tokens/`)
+
         if (!alive) return
 
-        const data = res?.data || []
+        // IMPORTANTE: ahora extraemos "results"
+        const data = res?.data?.results || []
+
         setUserTokens(Array.isArray(data) ? data : [])
       } catch (err) {
         if (!alive) return
@@ -114,7 +120,7 @@ export default function SecondaryMarket(){
     try{
       await createListing({
         user,
-        // mapeo para encajar con la lógica existente de mockMarket:
+        // adaptamos a lo que espera el mock
         artworkId: selectedToken.token_id,
         symbol: selectedToken.token_name,
         title: selectedToken.token_name,
