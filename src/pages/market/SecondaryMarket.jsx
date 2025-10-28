@@ -189,12 +189,21 @@ export default function SecondaryMarket(){
     const l = confirm.listing
     if (!l) return
     try{
-      setConfirm(c=>({ ...c, loading:true }))
-
       if (confirm.mode === 'buy') {
-        // COMPRAR via backend real
+        // Validar saldo con comisión del 2% antes de llamar al backend
         const qtyNum = Math.floor(Number(buyQty) || 0)
+        const subtotal = Number(l.price) * qtyNum
+        const fee = subtotal * 0.02
+        const totalWithFee = subtotal + fee
 
+        if (totalWithFee > accountBalance) {
+          showNotice('Saldo insuficiente para completar la compra (incluye 2% de comisión).', 'err')
+          return
+        }
+
+        setConfirm(c=>({ ...c, loading:true }))
+
+        // COMPRAR via backend real
         await authService.client.post('/finance/buy-order/', {
           sell_order_id: l.id,
           quantity: qtyNum
@@ -202,6 +211,7 @@ export default function SecondaryMarket(){
 
         showNotice('Compra realizada')
       } else {
+        setConfirm(c=>({ ...c, loading:true }))
         // CANCELAR PUBLICACIÓN (orden propia)
         await authService.client.patch(`/finance/sell-orders/${l.id}/`, {
           status: 'cancelada'
@@ -230,6 +240,12 @@ export default function SecondaryMarket(){
   const buyTotal = (confirm.mode === 'buy' && confirm.listing && qtyValid)
     ? Number(confirm.listing.price) * qtyNum
     : 0
+
+  // ---- NUEVO: comisión 2% y total final mostrado en el modal ----
+  const feeRate = 0.02
+  const buyFee = (confirm.mode === 'buy' && confirm.listing && qtyValid) ? buyTotal * feeRate : 0
+  const grandTotal = (confirm.mode === 'buy' && confirm.listing && qtyValid) ? buyTotal + buyFee : 0
+  // ---------------------------------------------------------------
 
   // límite de cantidad para publicar en el modal, basado en lo que el usuario tiene
   const maxForSelectedToken = selectedToken ? Number(selectedToken.quantity || 0) : null
@@ -467,8 +483,8 @@ export default function SecondaryMarket(){
 
               {confirm.mode === 'buy' && (
                 <div>
-                  <span className="font-medium">Total: </span>
-                  {qtyValid ? `$${fmt(buyTotal)}` : <span className="text-slate-500">—</span>}
+                  <span className="font-medium">Total (incluye 2% de comisión): </span>
+                  {qtyValid ? `$${fmt(grandTotal)}` : <span className="text-slate-500">—</span>}
                 </div>
               )}
             </div>
