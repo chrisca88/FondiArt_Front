@@ -192,10 +192,17 @@ export default function SecondaryMarket(){
       setConfirm(c=>({ ...c, loading:true }))
 
       if (confirm.mode === 'buy') {
+        // COMPRAR via backend real
         const qtyNum = Math.floor(Number(buyQty) || 0)
-        await buyListing({ listingId: l.id, buyer: user, qty: qtyNum })
+
+        await authService.client.post('/finance/buy-order/', {
+          sell_order_id: l.id,
+          quantity: qtyNum
+        })
+
         showNotice('Compra realizada')
       } else {
+        // CANCELAR PUBLICACIÓN (orden propia)
         await authService.client.patch(`/finance/sell-orders/${l.id}/`, {
           status: 'cancelada'
         })
