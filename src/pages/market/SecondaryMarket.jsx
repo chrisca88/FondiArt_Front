@@ -40,15 +40,16 @@ export default function SecondaryMarket(){
     setNotice({ msg, type }); setTimeout(()=> setNotice(null), 1600)
   }
 
-  // === NUEVO: cargar órdenes abiertas del backend real ===
+  // === obtener órdenes abiertas desde backend real (AJUSTADO A .results) ===
   async function fetchOpenOrders() {
     try {
       setLoading(true)
       const res = await authService.client.get('/finance/sell-orders/open/')
-      const data = Array.isArray(res?.data) ? res.data : []
+      // ahora tomamos results del objeto paginado
+      const raw = res?.data?.results || []
 
       // Adaptamos cada orden a la forma que ya renderiza la tabla
-      const mapped = data.map(o => ({
+      const mapped = raw.map(o => ({
         id: o.id,
         symbol: `Token #${o.token}`,
         title: `Token ID ${o.token}`,
@@ -371,6 +372,7 @@ export default function SecondaryMarket(){
                       onChange={e=> {
                         const raw = e.target.value
                         let next = raw
+
                         // no permitir más que lo que tiene el usuario
                         if (maxForSelectedToken != null) {
                           const asNum = Number(raw)
@@ -378,6 +380,7 @@ export default function SecondaryMarket(){
                             next = String(maxForSelectedToken)
                           }
                         }
+
                         setForm(f=>({ ...f, qty: next }))
                       }}
                     />
