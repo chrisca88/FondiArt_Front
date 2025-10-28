@@ -16,6 +16,9 @@ export default function SecondaryMarket(){
   const [portfolio, setPortfolio] = useState({ cashARS: 0, items: [] })
   const [q, setQ] = useState('')
 
+  // Saldo real de la cuenta (desde backend)
+  const [accountBalance, setAccountBalance] = useState(0)
+
   // Modal crear
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ artworkId: '', price: '', qty: 1 })
@@ -45,10 +48,7 @@ export default function SecondaryMarket(){
     try {
       setLoading(true)
       const res = await authService.client.get('/finance/sell-orders/open/')
-      // ahora tomamos results del objeto paginado
       const raw = res?.data?.results || []
-
-      // Adaptamos cada orden a la forma que ya renderiza la tabla
       const mapped = raw.map(o => ({
         id: o.id,
         symbol: o.token_symbol,
@@ -59,7 +59,6 @@ export default function SecondaryMarket(){
         sellerName: o.user_name,
         status: o.status,
       }))
-
       setListings(mapped)
     } catch (err) {
       console.error('Error cargando órdenes:', err)
@@ -70,18 +69,28 @@ export default function SecondaryMarket(){
     }
   }
 
-  // Carga inicial de órdenes abiertas y portfolio
+  // === obtener saldo real de cuenta ===
+  async function fetchAccount() {
+    try {
+      const res = await authService.client.get('/finance/cuenta/')
+      const bal = Number(res?.data?.balance || 0)
+      setAccountBalance(bal)
+    } catch (err) {
+      console.error('Error cargando saldo:', err)
+      setAccountBalance(0)
+    }
+  }
+
+  // Carga inicial de órdenes abiertas, portfolio y saldo
   useEffect(() => {
     let alive = true
     async function load() {
-      // órdenes abiertas
       await fetchOpenOrders()
-
-      // portfolio
       const pf = await getPortfolio(user)
       if (alive) {
         setPortfolio(pf)
       }
+      await fetchAccount()
     }
     load()
     return () => { alive = false }
@@ -110,13 +119,9 @@ export default function SecondaryMarket(){
       try {
         setTokensLoading(true)
         setTokensError('')
-        // GET /api/v1/finance/users/<user_id>/tokens/
         const res = await authService.client.get(`/finance/users/${user.id}/tokens/`)
         if (!alive) return
-
-        // endpoint paginado { results: [...] }
         const data = res?.data?.results || []
-        // cada item: { token_id, token_name, quantity, unit_price }
         setUserTokens(Array.isArray(data) ? data : [])
       } catch (err) {
         if (!alive) return
@@ -141,7 +146,6 @@ export default function SecondaryMarket(){
       return showNotice('Seleccioná un token válido', 'err')
     }
 
-    // validación: no puede publicar más cantidad de la que tiene
     const desiredQty = Number(form.qty || 1)
     const maxAllowed = Number(chosen.quantity || 0)
     if (desiredQty < 1 || desiredQty > maxAllowed){
@@ -149,7 +153,6 @@ export default function SecondaryMarket(){
     }
 
     try{
-      // POST /api/v1/finance/sell-orders
       await authService.client.post('/finance/sell-orders/', {
         token: chosen.token_id,
         user: user.id,
@@ -157,22 +160,21 @@ export default function SecondaryMarket(){
         price: form.price
       })
 
-      // refrescar órdenes abiertas (mercado) y portfolio
       await fetchOpenOrders()
       const pf = await getPortfolio(user)
       setPortfolio(pf)
 
-      // cerrar modal y limpiar form
+      // también refresco saldo real por si hay cambios
+      await fetchAccount()
+
       setOpen(false)
       setForm({ artworkId:'', price:'', qty:1 })
-
       showNotice('Publicación creada')
     }catch(err){
       showNotice(err?.response?.data?.message || err.message || 'Error al publicar', 'err')
     }
   }
 
-  // Abrir confirmaciones
   const askCancel = (listing) =>
     setConfirm({ open:true, mode:'cancel', listing, loading:false })
   const askBuy = (listing) => {
@@ -190,13 +192,10 @@ export default function SecondaryMarket(){
       setConfirm(c=>({ ...c, loading:true }))
 
       if (confirm.mode === 'buy') {
-        // COMPRA (mock actual)
         const qtyNum = Math.floor(Number(buyQty) || 0)
         await buyListing({ listingId: l.id, buyer: user, qty: qtyNum })
         showNotice('Compra realizada')
       } else {
-        // CANCELAR PUBLICACIÓN (orden propia)
-        // PATCH /api/v1/finance/sell-orders/<id>/
         await authService.client.patch(`/finance/sell-orders/${l.id}/`, {
           status: 'cancelada'
         })
@@ -206,6 +205,7 @@ export default function SecondaryMarket(){
       await fetchOpenOrders()
       const pf = await getPortfolio(user)
       setPortfolio(pf)
+      await fetchAccount()
 
       closeConfirm()
     }catch(err){
@@ -252,7 +252,7 @@ export default function SecondaryMarket(){
           <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs uppercase text-slate-500">Tu saldo</div>
-              <div className="text-lg font-extrabold">${fmt(portfolio.cashARS)}</div>
+              <div className="text-lg font-extrabold">${fmt(accountBalance)}</div>
             </div>
             <button className="btn btn-primary" onClick={()=> setOpen(true)}>
               Nueva publicación
@@ -383,15 +383,12 @@ export default function SecondaryMarket(){
                       onChange={e=> {
                         const raw = e.target.value
                         let next = raw
-
-                        // no permitir más que lo que tiene el usuario
                         if (maxForSelectedToken != null) {
                           const asNum = Number(raw)
                           if (!Number.isNaN(asNum) && asNum > maxForSelectedToken) {
                             next = String(maxForSelectedToken)
                           }
                         }
-
                         setForm(f=>({ ...f, qty: next }))
                       }}
                     />
