@@ -1,7 +1,7 @@
 // src/pages/market/SecondaryMarket.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { listListings, cancelListing, buyListing } from '../../services/mockMarket.js'
+import { cancelListing, buyListing } from '../../services/mockMarket.js'
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
@@ -40,22 +40,50 @@ export default function SecondaryMarket(){
     setNotice({ msg, type }); setTimeout(()=> setNotice(null), 1600)
   }
 
-  // Carga inicial de publicaciones y portfolio
-  useEffect(()=>{
-    let alive = true
-    async function load(){
+  // === NUEVO: cargar órdenes abiertas del backend real ===
+  async function fetchOpenOrders() {
+    try {
       setLoading(true)
-      const [ls, pf] = await Promise.all([
-        listListings(),
-        getPortfolio(user)
-      ])
-      if (!alive) return
-      setListings(ls)
-      setPortfolio(pf)
+      const res = await authService.client.get('/finance/sell-orders/open/')
+      const data = Array.isArray(res?.data) ? res.data : []
+
+      // Adaptamos cada orden a la forma que ya renderiza la tabla
+      const mapped = data.map(o => ({
+        id: o.id,
+        symbol: `Token #${o.token}`,
+        title: `Token ID ${o.token}`,
+        price: o.price,
+        qty: o.quantity,
+        sellerId: o.user,
+        sellerName: `Usuario ${o.user}`,
+        status: o.status,
+      }))
+
+      setListings(mapped)
+    } catch (err) {
+      console.error('Error cargando órdenes:', err)
+      showNotice('Error al cargar órdenes del mercado', 'err')
+      setListings([])
+    } finally {
       setLoading(false)
     }
+  }
+
+  // Carga inicial de órdenes abiertas y portfolio
+  useEffect(() => {
+    let alive = true
+    async function load() {
+      // órdenes abiertas
+      await fetchOpenOrders()
+
+      // portfolio
+      const pf = await getPortfolio(user)
+      if (alive) {
+        setPortfolio(pf)
+      }
+    }
     load()
-    return ()=>{ alive = false }
+    return () => { alive = false }
   }, [user])
 
   const mySellables = useMemo(
@@ -81,23 +109,17 @@ export default function SecondaryMarket(){
       try {
         setTokensLoading(true)
         setTokensError('')
-
         // GET /api/v1/finance/users/<user_id>/tokens/
-        // authService.client ya tiene baseURL (/api/v1) y el Authorization Bearer
         const res = await authService.client.get(`/finance/users/${user.id}/tokens/`)
         if (!alive) return
 
-        // El endpoint devuelve objeto paginado con { results: [...] }
+        // endpoint paginado { results: [...] }
         const data = res?.data?.results || []
-
-        // data: [{ token_id, token_name, quantity, unit_price }, ...]
+        // cada item: { token_id, token_name, quantity, unit_price }
         setUserTokens(Array.isArray(data) ? data : [])
       } catch (err) {
         if (!alive) return
-        const msg =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Error al cargar tokens'
+        const msg = err?.response?.data?.message || err?.message || 'Error al cargar tokens'
         setTokensError(msg)
         setUserTokens([])
       } finally {
@@ -106,10 +128,10 @@ export default function SecondaryMarket(){
       }
     }
     fetchTokens()
-
     return ()=>{ alive = false }
   }, [open, user?.id])
 
+  // Crear nueva publicación
   async function handleCreate(e){
     e.preventDefault()
 
@@ -127,13 +149,6 @@ export default function SecondaryMarket(){
 
     try{
       // POST /api/v1/finance/sell-orders
-      // body esperado:
-      // {
-      //   token: <token_id>,
-      //   user: <user.id>,
-      //   quantity: <desiredQty>,
-      //   price: <form.price>
-      // }
       await authService.client.post('/finance/sell-orders/', {
         token: chosen.token_id,
         user: user.id,
@@ -141,9 +156,9 @@ export default function SecondaryMarket(){
         price: form.price
       })
 
-      // refrescamos publicaciones y portfolio tal como hacías
-      const [ls, pf] = await Promise.all([listListings(), getPortfolio(user)])
-      setListings(ls)
+      // refrescar órdenes abiertas (mercado) y portfolio
+      await fetchOpenOrders()
+      const pf = await getPortfolio(user)
       setPortfolio(pf)
 
       // cerrar modal y limpiar form
@@ -161,7 +176,7 @@ export default function SecondaryMarket(){
   const askBuy    = (listing) => { setBuyQty(1); setConfirm({ open:true, mode:'buy', listing, loading:false }) }
   const closeConfirm = () => setConfirm({ open:false, mode:null, listing:null, loading:false })
 
-  // Ejecutar confirmación
+  // Ejecutar confirmación (compra / cancelar)
   async function doConfirm(){
     const l = confirm.listing
     if (!l) return
@@ -175,8 +190,11 @@ export default function SecondaryMarket(){
         await cancelListing({ listingId: l.id, user })
         showNotice('Publicación cancelada')
       }
-      const [ls, pf] = await Promise.all([listListings(), getPortfolio(user)])
-      setListings(ls); setPortfolio(pf)
+
+      await fetchOpenOrders()
+      const pf = await getPortfolio(user)
+      setPortfolio(pf)
+
       closeConfirm()
     }catch(err){
       setConfirm(c=>({ ...c, loading:false }))
@@ -219,7 +237,7 @@ export default function SecondaryMarket(){
             <p className="lead mt-2 max-w-2xl">Compra y venta entre usuarios de tokens de obras.</p>
           </div>
 
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs uppercase text-slate-500">Tu saldo</div>
               <div className="text-lg font-extrabold">${fmt(portfolio.cashARS)}</div>
@@ -246,7 +264,7 @@ export default function SecondaryMarket(){
           <button className="btn btn-outline" onClick={()=> navigate('/wallet')}>Ir a mi wallet</button>
         </div>
 
-        {/* Tabla */}
+        {/* Tabla de órdenes */}
         <div className="card-surface p-0 overflow-hidden">
           <div className="grid grid-cols-12 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
             <div className="col-span-4">Token</div>
@@ -353,7 +371,6 @@ export default function SecondaryMarket(){
                       onChange={e=> {
                         const raw = e.target.value
                         let next = raw
-
                         // no permitir más que lo que tiene el usuario
                         if (maxForSelectedToken != null) {
                           const asNum = Number(raw)
@@ -361,7 +378,6 @@ export default function SecondaryMarket(){
                             next = String(maxForSelectedToken)
                           }
                         }
-
                         setForm(f=>({ ...f, qty: next }))
                       }}
                     />
