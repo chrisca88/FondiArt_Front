@@ -1,7 +1,7 @@
 // src/pages/market/SecondaryMarket.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { cancelListing, buyListing } from '../../services/mockMarket.js'
+import { buyListing } from '../../services/mockMarket.js'
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
@@ -173,9 +173,14 @@ export default function SecondaryMarket(){
   }
 
   // Abrir confirmaciones
-  const askCancel = (listing) => setConfirm({ open:true, mode:'cancel', listing, loading:false })
-  const askBuy    = (listing) => { setBuyQty(1); setConfirm({ open:true, mode:'buy', listing, loading:false }) }
-  const closeConfirm = () => setConfirm({ open:false, mode:null, listing:null, loading:false })
+  const askCancel = (listing) =>
+    setConfirm({ open:true, mode:'cancel', listing, loading:false })
+  const askBuy = (listing) => {
+    setBuyQty(1)
+    setConfirm({ open:true, mode:'buy', listing, loading:false })
+  }
+  const closeConfirm = () =>
+    setConfirm({ open:false, mode:null, listing:null, loading:false })
 
   // Ejecutar confirmación (compra / cancelar)
   async function doConfirm(){
@@ -183,12 +188,18 @@ export default function SecondaryMarket(){
     if (!l) return
     try{
       setConfirm(c=>({ ...c, loading:true }))
+
       if (confirm.mode === 'buy') {
+        // COMPRA (mock actual)
         const qtyNum = Math.floor(Number(buyQty) || 0)
         await buyListing({ listingId: l.id, buyer: user, qty: qtyNum })
         showNotice('Compra realizada')
       } else {
-        await cancelListing({ listingId: l.id, user })
+        // CANCELAR PUBLICACIÓN (orden propia)
+        // PATCH /api/v1/finance/sell-orders/<id>/
+        await authService.client.patch(`/finance/sell-orders/${l.id}/`, {
+          status: 'cancelada'
+        })
         showNotice('Publicación cancelada')
       }
 
@@ -199,7 +210,7 @@ export default function SecondaryMarket(){
       closeConfirm()
     }catch(err){
       setConfirm(c=>({ ...c, loading:false }))
-      showNotice(err.message || 'Ocurrió un error', 'err')
+      showNotice(err?.response?.data?.message || err.message || 'Ocurrió un error', 'err')
     }
   }
 
