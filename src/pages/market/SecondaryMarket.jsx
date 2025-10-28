@@ -1,7 +1,7 @@
 // src/pages/market/SecondaryMarket.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { listListings, createListing, cancelListing, buyListing } from '../../services/mockMarket.js'
+import { listListings, cancelListing, buyListing } from '../../services/mockMarket.js'
 import { getPortfolio } from '../../services/mockWallet.js'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
@@ -126,16 +126,22 @@ export default function SecondaryMarket(){
     }
 
     try{
-      await createListing({
-        user,
-        // adaptamos a lo que espera el mock
-        artworkId: chosen.token_id,
-        symbol: chosen.token_name,
-        title: chosen.token_name,
-        price: Number(form.price),
-        qty: desiredQty
+      // POST /api/v1/finance/sell-orders
+      // body esperado:
+      // {
+      //   token: <token_id>,
+      //   user: <user.id>,
+      //   quantity: <desiredQty>,
+      //   price: <form.price>
+      // }
+      await authService.client.post('/finance/sell-orders/', {
+        token: chosen.token_id,
+        user: user.id,
+        quantity: desiredQty,
+        price: form.price
       })
 
+      // refrescamos publicaciones y portfolio tal como hacías
       const [ls, pf] = await Promise.all([listListings(), getPortfolio(user)])
       setListings(ls)
       setPortfolio(pf)
@@ -146,7 +152,7 @@ export default function SecondaryMarket(){
 
       showNotice('Publicación creada')
     }catch(err){
-      showNotice(err.message || 'Error al publicar', 'err')
+      showNotice(err?.response?.data?.message || err.message || 'Error al publicar', 'err')
     }
   }
 
@@ -213,7 +219,7 @@ export default function SecondaryMarket(){
             <p className="lead mt-2 max-w-2xl">Compra y venta entre usuarios de tokens de obras.</p>
           </div>
 
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs uppercase text-slate-500">Tu saldo</div>
               <div className="text-lg font-extrabold">${fmt(portfolio.cashARS)}</div>
@@ -317,7 +323,6 @@ export default function SecondaryMarket(){
                     <div className="text-xs text-red-600 mt-1">{tokensError}</div>
                   )}
 
-                  {/* Texto con precio de adquisición basado en unit_price */}
                   {selectedToken && !tokensError && (
                     <div className="mt-2 text-xs text-slate-600">
                       El precio de adquisición de tus tokens fue ${Number(selectedToken.unit_price || 0).toLocaleString('es-AR')} ARS
