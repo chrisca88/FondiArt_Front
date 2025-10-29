@@ -159,6 +159,7 @@ function OwnerArtworkCard({ item, onStats }){
 
   // El backend manda "Approved", "Pending", etc. Lo pasamos a lowercase para mapear.
   const currentStatus = statusConfig[item.status?.toLowerCase?.()] || statusConfig.default
+  const isApproved = item.status?.toLowerCase?.() === 'approved'
 
   let imageUrl = item.image;
   if (typeof imageUrl === 'string') {
@@ -228,12 +229,16 @@ function OwnerArtworkCard({ item, onStats }){
           >
             Editar publicación
           </Link>
-          <button
-            onClick={onStats}
-            className="btn btn-primary w-full sm:w-1/2 rounded-xl text-center"
-          >
-            Ver estadísticas
-          </button>
+
+          {/* ⬇️ Mostrar botón sólo si está aprobada */}
+          {isApproved && (
+            <button
+              onClick={onStats}
+              className="btn btn-primary w-full sm:w-1/2 rounded-xl text-center"
+            >
+              Ver estadísticas
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -243,7 +248,7 @@ function OwnerArtworkCard({ item, onStats }){
 function GridSkeleton(){
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {Array.from({length:8}).map((_,i)=>( 
+      {Array.from({length:8}).map((_,i)=>(
         <div key={i} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
           <div className="aspect-[4/3] w-full animate-pulse bg-slate-200/70" />
           <div className="p-4 space-y-2">
