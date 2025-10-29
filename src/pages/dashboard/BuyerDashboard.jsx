@@ -62,7 +62,7 @@ const mapApiItemToCard = (a) => {
     fractionsLeft: Number(fractionsLeft || 0),
     image: fixImageUrl(a.image),
     tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
-    rating: round1(a.rating?.avg), // 👈 ahora viene con 1 decimal
+    rating: round1(a.rating?.avg),
     createdAt: a.createdAt,
     __isDirect: isDirect,
     __estadoVenta: String(a.estado_venta || '').toLowerCase(),
@@ -90,6 +90,12 @@ export default function BuyerDashboard(){
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // --- NUEVO: estado para recomendadas ---
+  const [recommended, setRecommended] = useState([])
+  const [recLoading, setRecLoading] = useState(true)
+  const [recError, setRecError] = useState('')
+  // ---------------------------------------
+
   const user = useSelector(s => s.auth.user)
   const favKey = useMemo(()=> user?.id ? `fav_${user.id}` : 'fav_anon', [user?.id])
   const [favs, setFavs] = useState(new Set())
@@ -116,7 +122,39 @@ export default function BuyerDashboard(){
     })
   }
 
-  // Fetch desde API real (paginado: usamos .results)
+  // Fetch obras recomendadas (reemplaza contenido estático del carrusel superior)
+  useEffect(()=>{
+    let alive = true
+    setRecLoading(true)
+    setRecError('')
+
+    authService.client
+      .get('/artworks/recommended-by-performance/')
+      .then(res => {
+        if (!alive) return
+        const payload = res?.data
+        const list = Array.isArray(payload) ? payload
+                  : Array.isArray(payload?.results) ? payload.results
+                  : []
+        const mapped = list
+          .map(mapApiItemToCard)
+          .filter(isAvailable)
+
+        setRecommended(mapped)
+      })
+      .catch(err => {
+        console.error('[BuyerDashboard] GET /artworks/recommended-by-performance/ error:', err?.response?.data || err.message)
+        setRecError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar las recomendaciones.')
+        setRecommended([])
+      })
+      .finally(()=>{
+        if (alive) setRecLoading(false)
+      })
+
+    return ()=>{ alive = false }
+  }, []) // sólo al montar
+
+  // Fetch desde API real (lista general / marketplace)
   useEffect(()=>{
     let alive = true
     setLoading(true)
@@ -178,7 +216,15 @@ export default function BuyerDashboard(){
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className='mt-8'>
-        <RecommendedRow />
+        {/* Le pasamos las recomendadas que vienen del backend */}
+        <RecommendedRow
+          items={recommended}
+          loading={recLoading}
+          error={recError}
+          onView={id => navigate(`/obra/${id}`)}
+          favs={favs}
+          onToggleFav={toggleFav}
+        />
       </div>
 
       {/* HERO */}
