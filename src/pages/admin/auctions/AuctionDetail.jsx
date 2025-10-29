@@ -358,7 +358,6 @@ export default function AuctionDetail(){
     }
 
     // Intentamos identificar la obra para liquidar
-    // Ajustá esta parte si en tu payload el ID real de la obra viene con otro nombre.
     const artworkIdForLiquidation =
       data?.artwork_id ??
       data?.artwork ??
@@ -381,8 +380,6 @@ export default function AuctionDetail(){
 
       const checkRes = await api.post('/api/v1/finance/check-funds/', checkBody)
 
-      // 🔁 ACÁ la única modificación solicitada:
-      // El backend responde { has_sufficient_funds: True/False }
       const hasFunds = (typeof checkRes?.data === 'object')
         ? !!checkRes?.data?.has_sufficient_funds
         : !!checkRes?.data
@@ -403,7 +400,7 @@ export default function AuctionDetail(){
       const transferRes = await api.post('/api/v1/finance/transfer-to-admin/', transferBody)
       console.log('[AuctionDetail][TRANSFER][OK]', transferRes?.data)
 
-      // 3. Liquidar la obra entre los dueños/faccionistas/etc.
+      // 3. Liquidar la obra entre los dueños
       const liquidateBody = {
         artwork_id: artworkIdForLiquidation,
         total_amount: priceNumber.toFixed(2)
@@ -413,7 +410,7 @@ export default function AuctionDetail(){
       const liquidateRes = await api.post('/api/v1/finance/liquidate-artwork/', liquidateBody)
       console.log('[AuctionDetail][LIQUIDATE][OK]', liquidateRes?.data)
 
-      // 4. Marcar la subasta como finalizada en el recurso de subasta
+      // 4. Marcar la subasta como finalizada
       const payload = {
         buyer: selectedWinner.id,
         final_price: priceNumber.toFixed(2),
@@ -429,7 +426,7 @@ export default function AuctionDetail(){
 
       // Re-fetch para objeto completo y estado actualizado
       await fetchDetail({ current: true })
-      setWinnerUser(selectedWinner) // reflejo inmediato del ganador con DNI
+      setWinnerUser(selectedWinner)
 
     } catch(e){
       const p = e?.response?.data
@@ -499,31 +496,34 @@ export default function AuctionDetail(){
                     : status === 'cancelled' ? 'bg-red-100 text-red-700'
                     : 'bg-amber-100 text-amber-700'
                 }`}>
-                  {status}
+                  {/* 🔸 Traducción solo para 'finished' */}
+                  {status === 'finished' ? 'Finalizada' : status}
                 </span>
               </div>
 
-              {/* Cambiar fecha de subasta */}
-              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
-                <label className="form-label" htmlFor="auctionLocal">Nueva fecha/hora de subasta</label>
-                <input
-                  id="auctionLocal"
-                  type="datetime-local"
-                  className="input"
-                  value={auctionLocal}
-                  onChange={(e)=>setAuctionLocal(e.target.value)}
-                />
-                {saveErr && <div className="text-sm text-red-600 mt-2">{saveErr}</div>}
-                {saveOk &&  <div className="text-sm text-emerald-700 mt-2">¡Fecha de subasta actualizada!</div>}
-                <button
-                  type="button"
-                  className="btn btn-primary w-full mt-3 disabled:opacity-60"
-                  onClick={onSaveAuctionDate}
-                  disabled={savingDate || !auctionLocal}
-                >
-                  {savingDate ? 'Guardando…' : 'Guardar fecha de subasta'}
-                </button>
-              </div>
+              {/* Cambiar fecha de subasta: oculto si está finalizada */}
+              {status !== 'finished' && (
+                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+                  <label className="form-label" htmlFor="auctionLocal">Nueva fecha/hora de subasta</label>
+                  <input
+                    id="auctionLocal"
+                    type="datetime-local"
+                    className="input"
+                    value={auctionLocal}
+                    onChange={(e)=>setAuctionLocal(e.target.value)}
+                  />
+                  {saveErr && <div className="text-sm text-red-600 mt-2">{saveErr}</div>}
+                  {saveOk &&  <div className="text-sm text-emerald-700 mt-2">¡Fecha de subasta actualizada!</div>}
+                  <button
+                    type="button"
+                    className="btn btn-primary w-full mt-3 disabled:opacity-60"
+                    onClick={onSaveAuctionDate}
+                    disabled={savingDate || !auctionLocal}
+                  >
+                    {savingDate ? 'Guardando…' : 'Guardar fecha de subasta'}
+                  </button>
+                </div>
+              )}
 
               {/* Ganador: selector por búsqueda (solo si NO está finalizada) */}
               {status !== 'finished' && (
