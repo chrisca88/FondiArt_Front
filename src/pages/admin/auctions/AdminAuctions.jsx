@@ -32,14 +32,6 @@ export default function AdminAuctions(){
     return ()=>{ alive=false }
   }, [])
 
-  // Helpers de fecha para "hoy" (límites locales del día)
-  function getTodayRange(){
-    const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-    const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-    return { start, end }
-  }
-
   // Normaliza URL de imagen (maneja cloudinary url-encoded y rutas relativas)
   function normalizeImageUrl(u){
     if (!u || typeof u !== 'string') return u
@@ -55,17 +47,22 @@ export default function AdminAuctions(){
     return u
   }
 
+  // 🧩 Nuevo filtrado adaptado al formato "YYYY-MM-DD"
   const items = useMemo(() => {
-    const { start: todayStart, end: todayEnd } = getTodayRange()
-    // Filtramos por auction_date
-    const parse = (a) => a?.auction_date ? new Date(a.auction_date) : null
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    const todayStr = `${yyyy}-${mm}-${dd}`
 
     const filtered = allAuctions.filter(a => {
-      const d = parse(a)
-      if (!d || isNaN(d)) return false
-      if (tab === 'today')    return d >= todayStart && d <= todayEnd
-      if (tab === 'upcoming') return d >  todayEnd
-      if (tab === 'finished') return d <  todayStart
+      const dateStr = a?.auction_date
+      if (!dateStr) return false
+
+      // Comparación directa por cadenas (formato ISO ordenable)
+      if (tab === 'today')    return dateStr === todayStr
+      if (tab === 'upcoming') return dateStr >  todayStr
+      if (tab === 'finished') return dateStr <  todayStr
       return false
     })
 
@@ -74,26 +71,17 @@ export default function AdminAuctions(){
   }, [allAuctions, tab])
 
   const handleDeleteAuction = async (id, title) => {
-    console.log(`Attempting to delete auction ID: ${id}`);
     if (!window.confirm(`¿Estás seguro de que querés eliminar la subasta para la obra "${title}"? Esta acción no se puede deshacer.`)) {
-      console.log("Deletion cancelled by user.");
       return
     }
     try {
       await api.delete(`/api/v1/auctions/${id}/`)
-      console.log(`Successfully deleted auction ID: ${id} from API.`);
-      setAllAuctions(prev => {
-        console.log("Previous auctions count:", prev.length);
-        const newAuctions = prev.filter(a => a.id !== id);
-        console.log("New auctions count:", newAuctions.length);
-        return newAuctions;
-      })
+      setAllAuctions(prev => prev.filter(a => a.id !== id))
     } catch (err) {
       console.error("Error deleting auction:", err)
       window.alert(err.response?.data?.detail || 'No se pudo eliminar la subasta.')
     }
   }
-
 
   if (user?.role !== 'admin'){
     return (
@@ -152,7 +140,7 @@ export default function AdminAuctions(){
                     <div className="text-sm text-slate-600">{it.artist_name}</div>
 
                     <div className="text-xs text-slate-500">
-                      Fecha de subasta: {it.auction_date ? new Date(it.auction_date).toLocaleString('es-AR') : '—'}
+                      Fecha de subasta: {it.auction_date || '—'}
                     </div>
 
                     {tab === 'finished' && (
