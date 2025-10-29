@@ -57,15 +57,18 @@ export default function AdminAuctions(){
 
   const items = useMemo(() => {
     const { start: todayStart, end: todayEnd } = getTodayRange()
-    // Filtramos por auction_date
     const parse = (a) => a?.auction_date ? new Date(a.auction_date) : null
 
     const filtered = allAuctions.filter(a => {
       const d = parse(a)
       if (!d || isNaN(d)) return false
+
       if (tab === 'today')    return d >= todayStart && d <= todayEnd
       if (tab === 'upcoming') return d >  todayEnd
-      if (tab === 'finished') return d <  todayStart
+
+      // ✅ Modificación: "finished" incluye fecha pasada o estado "finished"
+      if (tab === 'finished') return d < todayStart || a.status === 'finished'
+
       return false
     })
 
@@ -93,7 +96,6 @@ export default function AdminAuctions(){
       window.alert(err.response?.data?.detail || 'No se pudo eliminar la subasta.')
     }
   }
-
 
   if (user?.role !== 'admin'){
     return (
