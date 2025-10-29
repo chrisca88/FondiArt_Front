@@ -64,9 +64,10 @@ export default function AdminAuctions(){
       const d = parse(a)
       if (!d || isNaN(d)) return false
 
-      if (tab === 'today')    return d >= todayStart && d <= todayEnd
+      // 🔹 Hoy: dentro del rango y NO finalizadas
+      if (tab === 'today') return d >= todayStart && d <= todayEnd && a.status !== 'finished'
 
-      // 🔹 Próximas: solo futuras que no estén finalizadas
+      // 🔹 Próximas: futuras y NO finalizadas
       if (tab === 'upcoming') return d > todayEnd && a.status !== 'finished'
 
       // 🔹 Finalizadas: fecha pasada o estado 'finished'
@@ -171,13 +172,16 @@ export default function AdminAuctions(){
                       <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
                         {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
                       </Link>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
-                        className="btn btn-outline shrink-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                        title="Eliminar subasta"
-                      >
-                        <TrashIcon/>
-                      </button>
+                      {/* 🔸 Eliminar solo si no está en 'finished' */}
+                      {tab !== 'finished' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
+                          className="btn btn-outline shrink-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                          title="Eliminar subasta"
+                        >
+                          <TrashIcon/>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
