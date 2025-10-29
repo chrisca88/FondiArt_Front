@@ -8,7 +8,7 @@ export default function AdminAuctions(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState('today') // today | upcoming | finished
+  const [tab, setTab] = useState('today')
   const [allAuctions, setAllAuctions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -21,23 +21,26 @@ export default function AdminAuctions(){
     api.get('/api/v1/auctions/').then(res=>{
       if(!alive) return
       const payload = res?.data
+      console.log("📦 API response:", payload)
 
-      // 🔁 Aseguramos que siempre obtengamos el array correcto
       let list = []
       if (Array.isArray(payload?.results)) {
+        console.log("✅ Detectado formato con results[]")
         list = payload.results
       } else if (Array.isArray(payload)) {
+        console.log("✅ Detectado formato array directo")
         list = payload
       } else {
-        // fallback por si viene como {count,results:[...]} pero results no es array
+        console.log("⚠️ Formato inesperado, buscando en payload.data.results")
         list = Array.isArray(payload?.data?.results) ? payload.data.results : []
       }
 
+      console.log(`📋 Subastas cargadas: ${list.length}`, list)
       setAllAuctions(list || [])
       setLoading(false)
     }).catch(err => {
       if(!alive) return
-      console.error("Error fetching auctions:", err)
+      console.error("❌ Error fetching auctions:", err)
       setError('No se pudieron cargar las subastas.')
       setLoading(false)
     })
@@ -45,7 +48,6 @@ export default function AdminAuctions(){
     return ()=>{ alive=false }
   }, [])
 
-  // Normaliza URL de imagen (maneja cloudinary url-encoded y rutas relativas)
   function normalizeImageUrl(u){
     if (!u || typeof u !== 'string') return u
     const httpsMarker = 'https%3A/'
@@ -60,43 +62,38 @@ export default function AdminAuctions(){
     return u
   }
 
-  // 🧩 Filtrado adaptado al formato "YYYY-MM-DD" o "YYYY-MM-DDTHH..."
   const items = useMemo(() => {
-    // construimos "YYYY-MM-DD" de HOY en la TZ local
     const now = new Date()
     const yyyy = now.getFullYear()
     const mm = String(now.getMonth() + 1).padStart(2, '0')
     const dd = String(now.getDate()).padStart(2, '0')
     const todayStr = `${yyyy}-${mm}-${dd}`
 
+    console.log("📅 Fecha actual (local):", todayStr)
+
     const normDateStr = (raw) => {
       if (!raw || typeof raw !== 'string') return ''
-      // si viene "2025-10-29" -> queda igual
-      // si viene "2025-10-29T00:00:00Z" -> tomamos solo la parte antes de la "T"
-      return raw.split('T')[0]
+      const val = raw.split('T')[0]
+      return val
     }
 
     const filtered = allAuctions.filter(a => {
       const dateStr = normDateStr(a.auction_date)
-      if (!dateStr) return false
+      if (!dateStr) {
+        console.warn("⚠️ Subasta sin fecha:", a)
+        return false
+      }
 
-      if (tab === 'today') {
-        return dateStr === todayStr
-      }
-      if (tab === 'upcoming') {
-        // subastas con fecha POSTERIOR a hoy
-        return dateStr > todayStr
-      }
-      if (tab === 'finished') {
-        // subastas con fecha ANTERIOR a hoy
-        return dateStr < todayStr
-      }
-      return false
+      let match = false
+      if (tab === 'today')    match = (dateStr === todayStr)
+      if (tab === 'upcoming') match = (dateStr > todayStr)
+      if (tab === 'finished') match = (dateStr < todayStr)
+
+      console.log(`🧩 [${tab}] Comparando ${dateStr} con ${todayStr} → ${match ? '✅ Incluida' : '❌ Excluida'}`)
+      return match
     })
 
-    console.log(
-      `Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`
-    )
+    console.log(`📊 Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`)
     return filtered
   }, [allAuctions, tab])
 
@@ -168,18 +165,15 @@ export default function AdminAuctions(){
                   <div className="p-4 space-y-2">
                     <div className="font-bold line-clamp-1">{it.artwork_title}</div>
                     <div className="text-sm text-slate-600">{it.artist_name}</div>
-
                     <div className="text-xs text-slate-500">
                       Fecha de subasta: {it.auction_date || '—'}
                     </div>
-
                     {tab === 'finished' && (
                       <div className="mt-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs p-2">
                         Ganador: <strong>{it.buyer || '—'}</strong><br/>
                         Precio final: ${Number(it.final_price||0).toLocaleString('es-AR')}
                       </div>
                     )}
-
                     <div className="mt-3 flex items-center gap-2">
                       <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
                         {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
