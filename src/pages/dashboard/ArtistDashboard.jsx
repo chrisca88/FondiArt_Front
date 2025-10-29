@@ -23,6 +23,9 @@ export default function ArtistDashboard() {
   // --------- estado del formulario ---------
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  // 🔹 NUEVOS CAMPOS
+  const [medidas, setMedidas] = useState('')
+  const [soporte, setSoporte] = useState('')
 
   // Por defecto lo dejamos en true para nueva obra, pero si estamos editando
   // lo sobreescribimos con el valor del backend (venta_directa).
@@ -70,6 +73,9 @@ export default function ArtistDashboard() {
         setInitialArtwork(it)
         setTitle(it.title || '')
         setDescription(it.description || '')
+        // 🔹 NUEVOS CAMPOS (cargar desde backend si existen)
+        setMedidas(it.medidas || '')
+        setSoporte(it.soporte || '')
         // ✅ tomar venta_directa del backend (true/false/"true"/1…)
         setDirectSale(toBool(it.venta_directa))
         setPrice(String(it.price || it.price_reference || ''))
@@ -158,6 +164,9 @@ export default function ArtistDashboard() {
     const basePayload = {
       title: title.trim(),
       description: description.trim(),
+      // 🔹 NUEVOS CAMPOS (crear/editar)
+      medidas: medidas.trim(),
+      soporte: soporte.trim(),
       image: finalGallery[0],
       gallery: finalGallery.slice(1),
       tags: Array.from(tags),
@@ -175,6 +184,13 @@ export default function ArtistDashboard() {
         }
         if (description.trim() !== initialArtwork.description) {
           payload.description = description.trim()
+        }
+        // 🔹 Enviar solo si cambiaron
+        if ((initialArtwork.medidas || '') !== medidas.trim()) {
+          payload.medidas = medidas.trim()
+        }
+        if ((initialArtwork.soporte || '') !== soporte.trim()) {
+          payload.soporte = soporte.trim()
         }
 
         // Precio solo si es venta directa
@@ -225,6 +241,9 @@ export default function ArtistDashboard() {
         // -------- CREAR (POST) --------
         const createPayload = {
           ...basePayload,
+          // 🔹 explícitos para evitar dudas
+          medidas: medidas.trim(),
+          soporte: soporte.trim(),
         }
         if (directSale) {
           createPayload.price = parseFloat(price) || 0
@@ -305,6 +324,18 @@ export default function ArtistDashboard() {
                   <label className="form-label" htmlFor="desc">Descripción</label>
                   <textarea id="desc" className="input h-32" value={description} onChange={(e) => setDescription(e.target.value)} required />
                 </div>
+
+                {/* 🔹 NUEVOS CAMPOS justo debajo de descripción */}
+                <div className="mt-4">
+                  <label className="form-label" htmlFor="medidas">Medidas</label>
+                  <input id="medidas" className="input" placeholder="Ej. 60 x 80 cm" value={medidas} onChange={(e)=>setMedidas(e.target.value)} />
+                </div>
+
+                <div className="mt-4">
+                  <label className="form-label" htmlFor="soporte">Soporte</label>
+                  <input id="soporte" className="input" placeholder="Ej. Óleo sobre lienzo" value={soporte} onChange={(e)=>setSoporte(e.target.value)} />
+                </div>
+                {/* ------------------------------ */}
 
                 <div className="mt-5">
                   <label className="inline-flex items-center gap-2">
