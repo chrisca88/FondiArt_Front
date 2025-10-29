@@ -32,7 +32,7 @@ export default function AdminAuctions(){
     return ()=>{ alive=false }
   }, [])
 
-  // Helpers de fecha para "hoy" (límites locales del día)
+  // Helpers de fecha para "hoy"
   function getTodayRange(){
     const now = new Date()
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
@@ -40,7 +40,7 @@ export default function AdminAuctions(){
     return { start, end }
   }
 
-  // Normaliza URL de imagen (maneja cloudinary url-encoded y rutas relativas)
+  // Normaliza URL de imagen
   function normalizeImageUrl(u){
     if (!u || typeof u !== 'string') return u
     const httpsMarker = 'https%3A/'
@@ -55,6 +55,7 @@ export default function AdminAuctions(){
     return u
   }
 
+  // 🧩 Filtro corregido
   const items = useMemo(() => {
     const { start: todayStart, end: todayEnd } = getTodayRange()
     const parse = (a) => a?.auction_date ? new Date(a.auction_date) : null
@@ -64,9 +65,11 @@ export default function AdminAuctions(){
       if (!d || isNaN(d)) return false
 
       if (tab === 'today')    return d >= todayStart && d <= todayEnd
-      if (tab === 'upcoming') return d >  todayEnd
 
-      // ✅ Modificación: "finished" incluye fecha pasada o estado "finished"
+      // 🔹 Próximas: solo futuras que no estén finalizadas
+      if (tab === 'upcoming') return d > todayEnd && a.status !== 'finished'
+
+      // 🔹 Finalizadas: fecha pasada o estado 'finished'
       if (tab === 'finished') return d < todayStart || a.status === 'finished'
 
       return false
