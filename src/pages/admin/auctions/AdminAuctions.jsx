@@ -17,10 +17,22 @@ export default function AdminAuctions(){
     let alive = true
     setLoading(true)
     setError(null)
+
     api.get('/api/v1/auctions/').then(res=>{
       if(!alive) return
       const payload = res?.data
-      const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+
+      // 🔁 Aseguramos que siempre obtengamos el array correcto
+      let list = []
+      if (Array.isArray(payload?.results)) {
+        list = payload.results
+      } else if (Array.isArray(payload)) {
+        list = payload
+      } else {
+        // fallback por si viene como {count,results:[...]} pero results no es array
+        list = Array.isArray(payload?.data?.results) ? payload.data.results : []
+      }
+
       setAllAuctions(list || [])
       setLoading(false)
     }).catch(err => {
@@ -29,6 +41,7 @@ export default function AdminAuctions(){
       setError('No se pudieron cargar las subastas.')
       setLoading(false)
     })
+
     return ()=>{ alive=false }
   }, [])
 
@@ -47,26 +60,43 @@ export default function AdminAuctions(){
     return u
   }
 
-  // 🧩 Nuevo filtrado adaptado al formato "YYYY-MM-DD"
+  // 🧩 Filtrado adaptado al formato "YYYY-MM-DD" o "YYYY-MM-DDTHH..."
   const items = useMemo(() => {
-    const today = new Date()
-    const yyyy = today.getFullYear()
-    const mm = String(today.getMonth() + 1).padStart(2, '0')
-    const dd = String(today.getDate()).padStart(2, '0')
+    // construimos "YYYY-MM-DD" de HOY en la TZ local
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
     const todayStr = `${yyyy}-${mm}-${dd}`
 
+    const normDateStr = (raw) => {
+      if (!raw || typeof raw !== 'string') return ''
+      // si viene "2025-10-29" -> queda igual
+      // si viene "2025-10-29T00:00:00Z" -> tomamos solo la parte antes de la "T"
+      return raw.split('T')[0]
+    }
+
     const filtered = allAuctions.filter(a => {
-      const dateStr = a?.auction_date
+      const dateStr = normDateStr(a.auction_date)
       if (!dateStr) return false
 
-      // Comparación directa por cadenas (formato ISO ordenable)
-      if (tab === 'today')    return dateStr === todayStr
-      if (tab === 'upcoming') return dateStr >  todayStr
-      if (tab === 'finished') return dateStr <  todayStr
+      if (tab === 'today') {
+        return dateStr === todayStr
+      }
+      if (tab === 'upcoming') {
+        // subastas con fecha POSTERIOR a hoy
+        return dateStr > todayStr
+      }
+      if (tab === 'finished') {
+        // subastas con fecha ANTERIOR a hoy
+        return dateStr < todayStr
+      }
       return false
     })
 
-    console.log(`Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`)
+    console.log(
+      `Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`
+    )
     return filtered
   }, [allAuctions, tab])
 
