@@ -8,7 +8,7 @@ export default function AdminAuctions(){
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState('today')
+  const [tab, setTab] = useState('today') // today | upcoming | finished
   const [allAuctions, setAllAuctions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -17,37 +17,30 @@ export default function AdminAuctions(){
     let alive = true
     setLoading(true)
     setError(null)
-
     api.get('/api/v1/auctions/').then(res=>{
       if(!alive) return
       const payload = res?.data
-      console.log("📦 API response:", payload)
-
-      let list = []
-      if (Array.isArray(payload?.results)) {
-        console.log("✅ Detectado formato con results[]")
-        list = payload.results
-      } else if (Array.isArray(payload)) {
-        console.log("✅ Detectado formato array directo")
-        list = payload
-      } else {
-        console.log("⚠️ Formato inesperado, buscando en payload.data.results")
-        list = Array.isArray(payload?.data?.results) ? payload.data.results : []
-      }
-
-      console.log(`📋 Subastas cargadas: ${list.length}`, list)
+      const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
       setAllAuctions(list || [])
       setLoading(false)
     }).catch(err => {
       if(!alive) return
-      console.error("❌ Error fetching auctions:", err)
+      console.error("Error fetching auctions:", err)
       setError('No se pudieron cargar las subastas.')
       setLoading(false)
     })
-
     return ()=>{ alive=false }
   }, [])
 
+  // Helpers de fecha para "hoy" (límites locales del día)
+  function getTodayRange(){
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    return { start, end }
+  }
+
+  // Normaliza URL de imagen (maneja cloudinary url-encoded y rutas relativas)
   function normalizeImageUrl(u){
     if (!u || typeof u !== 'string') return u
     const httpsMarker = 'https%3A/'
@@ -63,52 +56,44 @@ export default function AdminAuctions(){
   }
 
   const items = useMemo(() => {
-    const now = new Date()
-    const yyyy = now.getFullYear()
-    const mm = String(now.getMonth() + 1).padStart(2, '0')
-    const dd = String(now.getDate()).padStart(2, '0')
-    const todayStr = `${yyyy}-${mm}-${dd}`
-
-    console.log("📅 Fecha actual (local):", todayStr)
-
-    const normDateStr = (raw) => {
-      if (!raw || typeof raw !== 'string') return ''
-      const val = raw.split('T')[0]
-      return val
-    }
+    const { start: todayStart, end: todayEnd } = getTodayRange()
+    // Filtramos por auction_date
+    const parse = (a) => a?.auction_date ? new Date(a.auction_date) : null
 
     const filtered = allAuctions.filter(a => {
-      const dateStr = normDateStr(a.auction_date)
-      if (!dateStr) {
-        console.warn("⚠️ Subasta sin fecha:", a)
-        return false
-      }
-
-      let match = false
-      if (tab === 'today')    match = (dateStr === todayStr)
-      if (tab === 'upcoming') match = (dateStr > todayStr)
-      if (tab === 'finished') match = (dateStr < todayStr)
-
-      console.log(`🧩 [${tab}] Comparando ${dateStr} con ${todayStr} → ${match ? '✅ Incluida' : '❌ Excluida'}`)
-      return match
+      const d = parse(a)
+      if (!d || isNaN(d)) return false
+      if (tab === 'today')    return d >= todayStart && d <= todayEnd
+      if (tab === 'upcoming') return d >  todayEnd
+      if (tab === 'finished') return d <  todayStart
+      return false
     })
 
-    console.log(`📊 Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`)
+    console.log(`Recalculating filtered items. Tab=${tab}, Total=${allAuctions.length}, Showing=${filtered.length}`)
     return filtered
   }, [allAuctions, tab])
 
   const handleDeleteAuction = async (id, title) => {
+    console.log(`Attempting to delete auction ID: ${id}`);
     if (!window.confirm(`¿Estás seguro de que querés eliminar la subasta para la obra "${title}"? Esta acción no se puede deshacer.`)) {
+      console.log("Deletion cancelled by user.");
       return
     }
     try {
       await api.delete(`/api/v1/auctions/${id}/`)
-      setAllAuctions(prev => prev.filter(a => a.id !== id))
+      console.log(`Successfully deleted auction ID: ${id} from API.`);
+      setAllAuctions(prev => {
+        console.log("Previous auctions count:", prev.length);
+        const newAuctions = prev.filter(a => a.id !== id);
+        console.log("New auctions count:", newAuctions.length);
+        return newAuctions;
+      })
     } catch (err) {
       console.error("Error deleting auction:", err)
       window.alert(err.response?.data?.detail || 'No se pudo eliminar la subasta.')
     }
   }
+
 
   if (user?.role !== 'admin'){
     return (
@@ -165,15 +150,18 @@ export default function AdminAuctions(){
                   <div className="p-4 space-y-2">
                     <div className="font-bold line-clamp-1">{it.artwork_title}</div>
                     <div className="text-sm text-slate-600">{it.artist_name}</div>
+
                     <div className="text-xs text-slate-500">
-                      Fecha de subasta: {it.auction_date || '—'}
+                      Fecha de subasta: {it.auction_date ? new Date(it.auction_date).toLocaleString('es-AR') : '—'}
                     </div>
+
                     {tab === 'finished' && (
                       <div className="mt-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs p-2">
                         Ganador: <strong>{it.buyer || '—'}</strong><br/>
                         Precio final: ${Number(it.final_price||0).toLocaleString('es-AR')}
                       </div>
                     )}
+
                     <div className="mt-3 flex items-center gap-2">
                       <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
                         {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
