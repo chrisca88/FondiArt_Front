@@ -2,34 +2,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Link } from 'react-router-dom'
-import { listArtworks } from '../../services/mockArtworks.js'
 
-export default function RecommendedRow() {
+export default function RecommendedRow({
+  items = [],
+  loading = false,
+  error = '',
+}) {
   const user = useSelector(s => s.auth.user)
   const isBuyer = !!user && user.role === 'buyer'
 
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
+  // Antes este componente hacía su propio fetch y tenía su propio loading interno.
+  // Ahora la data viene por props desde BuyerDashboard, pero queremos mantener
+  // exactamente la misma derivación de "recommended": mejor rating con disponibilidad (máx. 5).
 
-  useEffect(() => {
-    let alive = true
-    setLoading(true)
-    listArtworks({ sort: 'relevance' }).then(data => {
-      if (!alive) return
-      setItems(data)
-      setLoading(false)
-    })
-    return () => { alive = false }
-  }, [])
-
-  // Recomendadas: mejor rating con disponibilidad (máx. 5)
   const recommended = useMemo(() => {
-    return items
+    return (items || [])
       .filter(x => (x.fractionsLeft ?? 0) > 0)
       .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-      .slice(0, 5)
+      .slice(0, 10)
   }, [items])
 
+  // Misma lógica de visibilidad:
+  // - si no es buyer -> no mostramos nada
+  // - si ya NO está cargando y no hay recomendadas -> no mostramos nada
   if (!isBuyer) return null
   if (!loading && recommended.length === 0) return null
 
