@@ -33,15 +33,20 @@ export default function DonationsHistory(){
       .then(res=>{
         if (!alive) return
         const data = Array.isArray(res?.data) ? res.data : []
+
         // normalizamos & ordenamos por fecha desc
         const mapped = data.map(d => ({
           id: Number(d?.id),
-          projectId: Number(d?.project),
-          projectTitle: d?.project_title || 'Proyecto',
-          artistName: d?.artist_name || 'Artista',
+          cuenta: Number(d?.cuenta),
+          tipo: d?.tipo || '-',                  // DONACION_ENVIADA | DONACION_RECIBIDA
+          artworkId: d?.artwork ?? null,
+          projectTitle: d?.project_title ?? null, // puede venir null
+          artistName: d?.artist_name || '-',      // nombre artista si hay obra
           amount: Number(d?.monto_pesos ?? 0),
-          timestamp: d?.fecha || null
+          timestamp: d?.fecha || null,
+          status: d?.estado || '-'               // COMPLETADA | ...
         })).sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0))
+
         setItems(mapped)
         setLoading(false)
       })
@@ -55,25 +60,37 @@ export default function DonationsHistory(){
     return ()=>{ alive = false }
   }, [user?.id])
 
-  const total = useMemo(()=> items.reduce((acc, it)=> acc + (Number.isFinite(it.amount) ? it.amount : 0), 0), [items])
+  // Totales: sumamos por tipo
+  const totals = useMemo(()=>{
+    const sent = items.reduce((acc, it)=> acc + (it.tipo === 'DONACION_ENVIADA' ? it.amount : 0), 0)
+    const received = items.reduce((acc, it)=> acc + (it.tipo === 'DONACION_RECIBIDA' ? it.amount : 0), 0)
+    return { sent, received, overall: sent - received }
+  }, [items])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className="section-frame py-8 space-y-6">
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
           <p className="eyebrow">Donaciones</p>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
                 Historial de donaciones
               </h1>
-              <p className="lead mt-2">Revisá tus aportes realizados en la plataforma.</p>
+              <p className="lead mt-2">Revisá tus movimientos de donaciones (enviadas y recibidas).</p>
             </div>
             <div className="flex gap-2">
               <button className="btn btn-outline" onClick={()=> navigate('/donaciones')}>
                 Volver a Donaciones
               </button>
             </div>
+          </div>
+
+          {/* Resumen de totales */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Stat title="Total donado" value={`$ ${fmtMoney(totals.sent)}`} />
+            <Stat title="Total recibido" value={`$ ${fmtMoney(totals.received)}`} />
+            <Stat title="Balance (donado - recibido)" value={`$ ${fmtMoney(totals.overall)}`} />
           </div>
         </div>
 
@@ -98,39 +115,48 @@ export default function DonationsHistory(){
           <div className="card-surface p-0 overflow-hidden rounded-3xl">
             <div className="px-6 pt-6 pb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Tus movimientos</h2>
-              <div className="text-sm text-slate-600">
-                Total donado:&nbsp;
-                <span className="font-bold">
-                  ${fmtMoney(total)}
-                </span>
-              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 border-t border-b border-slate-200">
                   <tr className="text-left">
-                    <th className="px-6 py-3 font-semibold text-slate-600">Proyecto</th>
+                    <th className="px-6 py-3 font-semibold text-slate-600">Tipo</th>
                     <th className="px-6 py-3 font-semibold text-slate-600">Artista</th>
-                    <th className="px-6 py-3 font-semibold text-slate-600">Monto</th>
+                    <th className="px-6 py-3 font-semibold text-slate-600">Obra / Proyecto</th>
+                    <th className="px-6 py-3 font-semibold text-slate-600">Monto (ARS)</th>
                     <th className="px-6 py-3 font-semibold text-slate-600">Fecha y hora</th>
+                    <th className="px-6 py-3 font-semibold text-slate-600">Estado</th>
                     <th className="px-6 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {items.map(it=>(
                     <tr key={it.id} className="hover:bg-slate-50/70">
-                      <td className="px-6 py-3 font-medium">{it.projectTitle}</td>
-                      <td className="px-6 py-3">{it.artistName}</td>
+                      <td className="px-6 py-3">
+                        <TypeBadge tipo={it.tipo}/>
+                      </td>
+                      <td className="px-6 py-3">{it.artistName || '—'}</td>
+                      <td className="px-6 py-3">
+                        {it.projectTitle
+                          ? it.projectTitle
+                          : (it.artworkId ? `Obra #${it.artworkId}` : '—')
+                        }
+                      </td>
                       <td className="px-6 py-3">${fmtMoney(it.amount)}</td>
                       <td className="px-6 py-3">{fmtDateTime(it.timestamp)}</td>
+                      <td className="px-6 py-3">
+                        <StatusBadge status={it.status}/>
+                      </td>
                       <td className="px-6 py-3 text-right">
-                        <button
-                          className="btn btn-ghost text-indigo-700"
-                          onClick={()=> navigate(`/proyecto/${it.projectId}`)}
-                          title="Ver proyecto"
-                        >
-                          Ver proyecto
-                        </button>
+                        {it.artworkId ? (
+                          <button
+                            className="btn btn-ghost text-indigo-700"
+                            onClick={()=> navigate(`/obra/${it.artworkId}`)}
+                            title="Ver obra"
+                          >
+                            Ver obra
+                          </button>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -141,6 +167,44 @@ export default function DonationsHistory(){
         )}
       </div>
     </section>
+  )
+}
+
+function Stat({ title, value }){
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{title}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
+    </div>
+  )
+}
+
+function TypeBadge({ tipo }){
+  const isSent = tipo === 'DONACION_ENVIADA'
+  const isRecv = tipo === 'DONACION_RECIBIDA'
+  const cls = isSent
+    ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+    : isRecv
+      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      : 'bg-slate-100 text-slate-700 border-slate-200'
+  const label = isSent ? 'Enviada' : isRecv ? 'Recibida' : (tipo || '-')
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold border ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
+function StatusBadge({ status }){
+  const st = (status || '').toUpperCase()
+  let cls = 'bg-slate-100 text-slate-700 border-slate-200'
+  if (st === 'COMPLETADA') cls = 'bg-emerald-100 text-emerald-700 border-emerald-200'
+  if (st === 'PENDIENTE') cls = 'bg-amber-100 text-amber-700 border-amber-200'
+  if (st === 'FALLIDA') cls = 'bg-rose-100 text-rose-700 border-rose-200'
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold border ${cls}`}>
+      {status || '-'}
+    </span>
   )
 }
 
