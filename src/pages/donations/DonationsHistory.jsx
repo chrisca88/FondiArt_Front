@@ -39,8 +39,8 @@ export default function DonationsHistory(){
           projectId: Number(d?.project),
           projectTitle: d?.project_title || 'Proyecto',
           artistName: d?.artist_name || 'Artista',
-          amount: Number(d?.amount ?? 0),
-          timestamp: d?.timestamp || null
+          amount: Number(d?.monto_pesos ?? 0),
+          timestamp: d?.fecha || null
         })).sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0))
         setItems(mapped)
         setLoading(false)
