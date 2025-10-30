@@ -144,9 +144,15 @@ export default function ProjectForm(){
       if (import.meta.env.DEV) {
         console.log('[PROJECT FORM] response:', created)
       }
-      // navegamos al detalle
+      // 👉 navegación post-guardar
       const goId = created?.id ?? projectId
-      navigate(`/proyecto/${goId}`, { replace: true })
+      if (isEdit) {
+        // edición se mantiene igual
+        navigate(`/proyecto/${goId}`, { replace: true })
+      } else {
+        // publicación (crear) -> redirigir a /mis-proyectos
+        navigate('/mis-proyectos', { replace: true })
+      }
     }catch(err){
       const msg =
         err?.response?.data?.message ||
@@ -229,7 +235,7 @@ export default function ProjectForm(){
                     <div className="mt-3">
                       <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-indigo-500 transition-all"
+                          className="h-full transition-all"
                           style={{ width: `${upPct}%` }}
                         />
                       </div>
