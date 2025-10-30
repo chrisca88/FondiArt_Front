@@ -448,6 +448,7 @@ export default function Wallet(){
               onToggle={()=> setShowAmounts(v => !v)}
               onTransfer={startTransferFlow}
               transferLoading={transferLoading}
+              onDeposit={()=> navigate('/wallet/ingresar')} // NUEVO
             />
           </div>
 
@@ -490,7 +491,7 @@ export default function Wallet(){
             {transferErr ? (
               needsCbu ? (
                 <>
-                  Necesitás cargar tu CBU en tu perfil antes de poder retirar.{' '}
+                  Necesitás cargar tu CBU en tu perfil antes de poder retirar.{` `}
                   <button
                     className="underline text-indigo-600 font-semibold"
                     onClick={()=> navigate('/cuenta')}
@@ -694,7 +695,7 @@ function RowToken({ item, masked = false, onBuy }){
     <>
       <div className="h-px bg-slate-200/60" />
       <div className="grid grid-cols-12 items-center px-4 py-3">
-        <div className="col-span-4 flex items-center gap-3">
+        <div className="col-span-4 flex items中心 gap-3">
           {item.image ? (
             <img src={item.image} alt={item.title} className="h-9 w-9 rounded-full object-cover"/>
           ) : (
@@ -734,7 +735,8 @@ function BalanceBox({
   loading,
   error,
   onTransfer,
-  transferLoading
+  transferLoading,
+  onDeposit // NUEVO
 }){
   const renderContent = () => {
     if (loading) return <div className="text-sm text-slate-500">Cargando saldo…</div>
@@ -764,6 +766,15 @@ function BalanceBox({
         className="btn btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {transferLoading ? 'Validando…' : 'Transferir'}
+      </button>
+
+      {/* Botón Ingresar (NUEVO) */}
+      <button
+        onClick={onDeposit}
+        disabled={loading || !!error}
+        className="btn btn-outline w-full disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        Ingresar
       </button>
     </div>
   )
@@ -818,7 +829,7 @@ function EyeIcon(props){ return (
 )}
 function EyeOffIcon(props){ return (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.86 21.86 0 0 1-3.87 5.94"/>
+    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0  0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.86 21.86 0 0 1-3.87 5.94"/>
     <line x1="1" y1="1" x2="23" y2="23"/>
     <circle cx="12" cy="12" r="3"/>
   </svg>

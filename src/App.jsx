@@ -27,6 +27,7 @@ import AuctionDetail from './pages/admin/auctions/AuctionDetail.jsx'
 
 // Wallet
 import Wallet from './pages/wallet/Wallet.jsx'
+import DepositInfo from './src/pages/wallet/DepositInfo.jsx'
 
 // NEW: Donaciones (listado + perfil)
 import Donations from './pages/donations/Donations.jsx'
@@ -63,6 +64,7 @@ export default function App(){
 
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />
+          <Route path="/wallet/ingresar" element={<DepositInfo />} />
 
           {/* Donaciones */}
           <Route path="/donaciones" element={<Donations/>} />
