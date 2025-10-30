@@ -32,19 +32,35 @@ export default function DonationsHistory(){
     authService.client.get(path)
       .then(res=>{
         if (!alive) return
-        const data = Array.isArray(res?.data) ? res.data : []
 
-        // normalizamos & ordenamos por fecha desc
-        const mapped = data.map(d => ({
+        // --- Normalización de respuesta: array u objeto ---
+        let raw = []
+        const body = res?.data
+        if (Array.isArray(body)) {
+          raw = body
+        } else if (Array.isArray(body?.results)) {
+          raw = body.results
+        } else if (Array.isArray(body?.data)) {
+          raw = body.data
+        } else if (Array.isArray(body?.donations)) {
+          raw = body.donations
+        } else if (body && typeof body === 'object') {
+          // Fallback: tomar el primer array que aparezca entre los valores
+          const firstArray = Object.values(body).find(v => Array.isArray(v))
+          raw = Array.isArray(firstArray) ? firstArray : []
+        }
+
+        // --- Map y orden ---
+        const mapped = raw.map(d => ({
           id: Number(d?.id),
           cuenta: Number(d?.cuenta),
           tipo: d?.tipo || '-',                  // DONACION_ENVIADA | DONACION_RECIBIDA
           artworkId: d?.artwork ?? null,
-          projectTitle: d?.project_title ?? null, // puede venir null -> no mostrar nada
+          projectTitle: d?.project_title ?? null, // si es null -> no mostrar nada
           artistName: d?.artist_name || '-',
           amount: Number(d?.monto_pesos ?? 0),
           timestamp: d?.fecha || null,
-          status: d?.estado || '-'               // COMPLETADA | ...
+          status: d?.estado || '-'               // COMPLETADA | PENDIENTE | FALLIDA
         })).sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0))
 
         setItems(mapped)
@@ -69,7 +85,7 @@ export default function DonationsHistory(){
     return isBuyer ? items.filter(it => it.tipo === 'DONACION_ENVIADA') : items
   }, [items, isBuyer])
 
-  // Totales (según items visibles)
+  // Totales sobre items visibles
   const totals = useMemo(()=>{
     const sent = visibleItems.reduce((acc, it)=> acc + (it.tipo === 'DONACION_ENVIADA' ? it.amount : 0), 0)
     const received = visibleItems.reduce((acc, it)=> acc + (it.tipo === 'DONACION_RECIBIDA' ? it.amount : 0), 0)
