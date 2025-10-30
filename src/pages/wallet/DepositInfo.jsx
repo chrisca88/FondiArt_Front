@@ -81,7 +81,7 @@ export default function DepositInfo(){
           <h3 className="font-bold text-slate-900">Tips útiles</h3>
           <ul className="mt-2 text-slate-700 list-disc pl-5 space-y-1">
             <li>Conservá el comprobante de tu Home Banking por si fuera necesario validarlo.</li>
-            <li>Si el banco pide CUIT/CUIL: <strong>30-71234567-8</strong> (ficticio).</li>
+            <li>Si el banco pide CUIT/CUIL: <strong>30-71234567-8</strong></li>
             <li>Si tu banco permite “alias”, ingresá exactamente el alias indicado arriba.</li>
           </ul>
           <div className="mt-4">
