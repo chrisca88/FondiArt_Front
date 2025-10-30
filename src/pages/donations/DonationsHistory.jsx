@@ -33,7 +33,7 @@ export default function DonationsHistory(){
       .then(res=>{
         if (!alive) return
 
-        // --- Normalización de respuesta: array u objeto ---
+        // --- Normalización de respuesta paginada ---
         let raw = []
         const body = res?.data
         if (Array.isArray(body)) {
@@ -45,22 +45,21 @@ export default function DonationsHistory(){
         } else if (Array.isArray(body?.donations)) {
           raw = body.donations
         } else if (body && typeof body === 'object') {
-          // Fallback: tomar el primer array que aparezca entre los valores
           const firstArray = Object.values(body).find(v => Array.isArray(v))
           raw = Array.isArray(firstArray) ? firstArray : []
         }
 
-        // --- Map y orden ---
-        const mapped = raw.map(d => ({
-          id: Number(d?.id),
-          cuenta: Number(d?.cuenta),
-          tipo: d?.tipo || '-',                  // DONACION_ENVIADA | DONACION_RECIBIDA
-          artworkId: d?.artwork ?? null,
+        // --- Map y orden (soporta faltantes como en tu log) ---
+        const mapped = raw.map((d, idx) => ({
+          id: Number.isFinite(Number(d?.id)) ? Number(d.id) : idx + 1, // fallback si no viene id
+          cuenta: Number(d?.cuenta) || null,
+          tipo: d?.tipo || null,                  // puede no venir
+          artworkId: d?.artwork ?? null,          // puede no venir
           projectTitle: d?.project_title ?? null, // si es null -> no mostrar nada
-          artistName: d?.artist_name || '-',
-          amount: Number(d?.monto_pesos ?? 0),
-          timestamp: d?.fecha || null,
-          status: d?.estado || '-'               // COMPLETADA | PENDIENTE | FALLIDA
+          artistName: d?.artist_name || '-',      // viene en tu log
+          amount: Number(d?.monto_pesos ?? d?.amount ?? 0),
+          timestamp: d?.fecha || d?.timestamp || null,
+          status: d?.estado || null               // puede no venir
         })).sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0))
 
         setItems(mapped)
@@ -80,17 +79,28 @@ export default function DonationsHistory(){
   const roleStr = String(user?.role || user?.rol || user?.type || '').toLowerCase()
   const isBuyer = roleStr.includes('comprador') || roleStr.includes('buyer')
 
-  // Si es comprador, solo mostrar donaciones ENVIADAS
-  const visibleItems = useMemo(()=>{
-    return isBuyer ? items.filter(it => it.tipo === 'DONACION_ENVIADA') : items
-  }, [items, isBuyer])
+  // Hay campos?
+  const hasTipo = useMemo(()=> items.some(it => !!it.tipo), [items])
+  const hasStatus = useMemo(()=> items.some(it => !!it.status), [items])
+  const hasArtworkOrProject = useMemo(()=> items.some(it => it.artworkId || it.projectTitle), [items])
 
-  // Totales sobre items visibles
+  // Si es comprador y viene tipo -> filtrar a ENVIADA; si no viene tipo -> asumimos que todo es ENVIADA
+  const visibleItems = useMemo(()=>{
+    if (!isBuyer) return items
+    if (hasTipo) return items.filter(it => it.tipo === 'DONACION_ENVIADA')
+    return items // sin tipo: mostramos todo como enviadas
+  }, [items, isBuyer, hasTipo])
+
+  // Totales (sobre visibles). Si no hay tipo, el recibido será 0 por definición.
   const totals = useMemo(()=>{
-    const sent = visibleItems.reduce((acc, it)=> acc + (it.tipo === 'DONACION_ENVIADA' ? it.amount : 0), 0)
-    const received = visibleItems.reduce((acc, it)=> acc + (it.tipo === 'DONACION_RECIBIDA' ? it.amount : 0), 0)
+    const sent = visibleItems.reduce((acc, it)=> acc + (
+      hasTipo ? (it.tipo === 'DONACION_ENVIADA' ? it.amount : 0) : it.amount
+    ), 0)
+    const received = hasTipo
+      ? visibleItems.reduce((acc, it)=> acc + (it.tipo === 'DONACION_RECIBIDA' ? it.amount : 0), 0)
+      : 0
     return { sent, received, overall: sent - received }
-  }, [visibleItems])
+  }, [visibleItems, hasTipo])
 
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
@@ -103,7 +113,7 @@ export default function DonationsHistory(){
                 Historial de donaciones
               </h1>
               <p className="lead mt-2">
-                {isBuyer ? 'Revisá tus donaciones enviadas.' : 'Revisá tus movimientos de donaciones (enviadas y recibidas).'}
+                {isBuyer ? 'Revisá tus donaciones enviadas.' : (hasTipo ? 'Revisá tus movimientos (enviadas y recibidas).' : 'Revisá tus donaciones.')}
               </p>
             </div>
             <div className="flex gap-2">
@@ -114,9 +124,11 @@ export default function DonationsHistory(){
           </div>
 
           {/* Resumen de totales */}
-          <div className={`mt-6 grid gap-3 ${isBuyer ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3'}`}>
+          <div className={`mt-6 grid gap-3 ${
+            isBuyer || !hasTipo ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3'
+          }`}>
             <Stat title="Total donado" value={`$ ${fmtMoney(totals.sent)}`} />
-            {!isBuyer && (
+            {hasTipo && !isBuyer && (
               <>
                 <Stat title="Total recibido" value={`$ ${fmtMoney(totals.received)}`} />
                 <Stat title="Balance (donado - recibido)" value={`$ ${fmtMoney(totals.overall)}`} />
@@ -151,42 +163,50 @@ export default function DonationsHistory(){
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 border-t border-b border-slate-200">
                   <tr className="text-left">
-                    <th className="px-6 py-3 font-semibold text-slate-600">Tipo</th>
+                    {hasTipo && <th className="px-6 py-3 font-semibold text-slate-600">Tipo</th>}
                     <th className="px-6 py-3 font-semibold text-slate-600">Artista</th>
-                    <th className="px-6 py-3 font-semibold text-slate-600">Obra / Proyecto</th>
+                    {hasArtworkOrProject && <th className="px-6 py-3 font-semibold text-slate-600">Obra / Proyecto</th>}
                     <th className="px-6 py-3 font-semibold text-slate-600">Monto (ARS)</th>
                     <th className="px-6 py-3 font-semibold text-slate-600">Fecha y hora</th>
-                    <th className="px-6 py-3 font-semibold text-slate-600">Estado</th>
-                    <th className="px-6 py-3"></th>
+                    {hasStatus && <th className="px-6 py-3 font-semibold text-slate-600">Estado</th>}
+                    {hasArtworkOrProject && <th className="px-6 py-3"></th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {visibleItems.map(it=>(
                     <tr key={it.id} className="hover:bg-slate-50/70">
-                      <td className="px-6 py-3">
-                        <TypeBadge tipo={it.tipo}/>
-                      </td>
+                      {hasTipo && (
+                        <td className="px-6 py-3">
+                          <TypeBadge tipo={it.tipo}/>
+                        </td>
+                      )}
                       <td className="px-6 py-3">{it.artistName || '—'}</td>
-                      <td className="px-6 py-3">
-                        {/* Si project_title es null -> no mostrar nada */}
-                        {it.projectTitle ? it.projectTitle : ''}
-                      </td>
+                      {hasArtworkOrProject && (
+                        <td className="px-6 py-3">
+                          {/* Si project_title es null -> no mostrar nada */}
+                          {it.projectTitle ? it.projectTitle : (it.artworkId ? `Obra #${it.artworkId}` : '')}
+                        </td>
+                      )}
                       <td className="px-6 py-3">${fmtMoney(it.amount)}</td>
                       <td className="px-6 py-3">{fmtDateTime(it.timestamp)}</td>
-                      <td className="px-6 py-3">
-                        <StatusBadge status={it.status}/>
-                      </td>
-                      <td className="px-6 py-3 text-right">
-                        {it.artworkId ? (
-                          <button
-                            className="btn btn-ghost text-indigo-700"
-                            onClick={()=> navigate(`/obra/${it.artworkId}`)}
-                            title="Ver obra"
-                          >
-                            Ver obra
-                          </button>
-                        ) : null}
-                      </td>
+                      {hasStatus && (
+                        <td className="px-6 py-3">
+                          <StatusBadge status={it.status}/>
+                        </td>
+                      )}
+                      {hasArtworkOrProject && (
+                        <td className="px-6 py-3 text-right">
+                          {it.artworkId ? (
+                            <button
+                              className="btn btn-ghost text-indigo-700"
+                              onClick={()=> navigate(`/obra/${it.artworkId}`)}
+                              title="Ver obra"
+                            >
+                              Ver obra
+                            </button>
+                          ) : null}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -209,6 +229,7 @@ function Stat({ title, value }){
 }
 
 function TypeBadge({ tipo }){
+  if (!tipo) return <span className="text-slate-500 text-xs">—</span>
   const isSent = tipo === 'DONACION_ENVIADA'
   const isRecv = tipo === 'DONACION_RECIBIDA'
   const cls = isSent
@@ -225,6 +246,7 @@ function TypeBadge({ tipo }){
 }
 
 function StatusBadge({ status }){
+  if (!status) return <span className="text-slate-500 text-xs">—</span>
   const st = (status || '').toUpperCase()
   let cls = 'bg-slate-100 text-slate-700 border-slate-200'
   if (st === 'COMPLETADA') cls = 'bg-emerald-100 text-emerald-700 border-emerald-200'
