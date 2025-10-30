@@ -33,6 +33,7 @@ import DepositInfo from './pages/wallet/DepositInfo.jsx'
 // NEW: Donaciones (listado + perfil)
 import Donations from './pages/donations/Donations.jsx'
 import ArtistDonate from './pages/donations/ArtistDonate.jsx'
+import DonationsHistory from './pages/donations/DonationsHistory.jsx'
 
 import SecondaryMarket from './pages/market/SecondaryMarket.jsx'
 
@@ -71,6 +72,7 @@ export default function App(){
           {/* Donaciones */}
           <Route path="/donaciones" element={<Donations/>} />
           <Route path="/donaciones/artista/:slug" element={<ArtistDonate/>} />
+          <Route path="/donaciones/historial" element={<DonationsHistory />} />
 
           {/* Proyectos */}
           <Route path="/mis-proyectos" element={<MyProjects/>} />

@@ -86,8 +86,22 @@ export default function Donations(){
         <div className="relative overflow-hidden rounded-3xl bg-white/60 ring-1 ring-slate-200 p-6 sm:p-8">
           <div className="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-gradient-to-tr from-indigo-200 via-purple-200 to-pink-200 blur-3xl opacity-70" />
           <p className="eyebrow">Donaciones</p>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Apoyá a tu artista favorito</h1>
-          <p className="lead mt-2 max-w-2xl">Explorá artistas de la plataforma y realizá una donación directa.</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Apoyá a tu artista favorito</h1>
+              <p className="lead mt-2 max-w-2xl">Explorá artistas de la plataforma y realizá una donación directa.</p>
+            </div>
+            {/* 👉 NUEVO botón Historial */}
+            <div className="shrink-0">
+              <button
+                className="btn btn-outline"
+                onClick={() => navigate('/donaciones/historial')}
+                title="Ver historial de donaciones"
+              >
+                Historial de donaciones
+              </button>
+            </div>
+          </div>
 
           <div className="mt-6">
             <div className="relative max-w-md">
