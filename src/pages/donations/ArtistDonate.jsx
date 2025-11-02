@@ -66,7 +66,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  /* 2) Resolver artistId desde /artists/ y tomar avatar + bio reales */
+  /* 2) Resolver artistId desde /artists/ y **fusionar** avatar + bio reales */
   useEffect(()=>{
     let alive = true
     setArtistId(null)
@@ -87,19 +87,19 @@ export default function ArtistDonate(){
           console.log('[ARTIST DONATE] /artists response count=', results.length, 'matchId=', found?.id, 'matchName=', found?.name)
         }
 
-        if (found?.id != null) {
-          setArtistId(Number(found.id))
-        }
+        if (found?.id != null) setArtistId(Number(found.id))
 
-        // ⬇️ NUEVO: actualizar avatar y bio desde la API real
+        // ⬇️ clave: traer SIEMPRE bio y avatarUrl si existen
         if (found) {
-          const avatar = fixImageUrl(found.avatarUrl)
-          const bio = found.bio || ''
+          const avatarUrl = fixImageUrl(found.avatarUrl)
+          const bio = typeof found.bio === 'string' ? found.bio : ''
           setData(prev => ({
             ...(prev || {}),
-            name: found.name || prev?.name || '',
-            avatar: avatar || prev?.avatar || null,
-            bio: bio || prev?.bio || ''
+            name: found.name ?? prev?.name,
+            // si viene vacío no sobreescribo
+            avatar: avatarUrl || prev?.avatar || prev?.avatarUrl || null,
+            avatarUrl: avatarUrl || prev?.avatarUrl || prev?.avatar || null,
+            bio: bio.trim() ? bio : (prev?.bio || '')
           }))
         }
       })
@@ -290,6 +290,8 @@ export default function ArtistDonate(){
   if (loading) return <section className="section-frame py-16"><div className="h-48 bg-slate-200/70 animate-pulse rounded-3xl"/></section>
   if (!data) return null
 
+  const bioToShow = (data.bio && String(data.bio).trim()) ? data.bio : ''
+
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className="section-frame py-8 space-y-6">
@@ -303,7 +305,7 @@ export default function ArtistDonate(){
           {/* Perfil */}
           <div className="lg:col-span-2 card-surface p-6">
             <div className="flex items-center gap-4">
-              <Avatar name={data.name} src={data.avatar} size={14}/>
+              <Avatar name={data.name} src={data.avatar || data.avatarUrl} size={14}/>
               <div>
                 <h1 className="text-2xl font-extrabold leading-tight">{data.name}</h1>
                 {data.socials?.website && (
@@ -314,7 +316,7 @@ export default function ArtistDonate(){
               </div>
             </div>
             <p className="mt-4 text-slate-700 leading-relaxed">
-              {data.bio || 'El artista aún no agregó una biografía.'}
+              {bioToShow || 'El artista aún no agregó una biografía.'}
             </p>
 
             {/* Donar */}
