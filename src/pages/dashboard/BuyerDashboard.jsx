@@ -59,11 +59,7 @@ const mapApiItemToCard = (a) => {
   let fractionFrom   = Number(a.fractionFrom || 0)
 
   // --- OVERRIDES UI: venta directa ---
-  // Para venta directa ocultamos cualquier rastro de fracciones en la card:
-  // - nada de “0% vendido” -> el componente no podrá calcular % si no hay totales
-  // - nada de “Fracciones desde $ …” -> no enviamos fractionFrom
-  // - nada de “Disponibles 1/1” -> no enviamos totals/left
-  // Además mandamos un badge textual para que la card pueda mostrar “Disponible” si lo contempla.
+  // Ocultamos por completo datos de fracciones en la card.
   if (isDirect) {
     fractionsTotal = undefined
     fractionsLeft  = undefined
@@ -74,10 +70,10 @@ const mapApiItemToCard = (a) => {
     id: a.id,
     title: a.title,
     artist: a.artist?.name || a.artist || '',
-    price: Number(a.price || 0),          // precio final en venta directa
-    fractionFrom: fractionFrom,           // undefined en directa -> oculta leyenda “Fracciones desde…”
-    fractionsTotal: fractionsTotal,       // undefined en directa -> oculta % y “Disponibles”
-    fractionsLeft: Number(fractionsLeft ?? 0),
+    price: Number(a.price || 0),                // precio final en venta directa
+    fractionFrom: fractionFrom,                 // undefined en directa -> oculta “Fracciones desde…”
+    fractionsTotal: fractionsTotal,             // undefined en directa -> oculta %/disponibles
+    fractionsLeft: isDirect ? undefined : Number(fractionsLeft ?? 0), // ⬅️ clave
     image: fixImageUrl(a.image),
     tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
     rating: round1(a.rating?.avg),
@@ -88,8 +84,8 @@ const mapApiItemToCard = (a) => {
     __estadoVenta: String(a.estado_venta || '').toLowerCase(),
     __status: String(a.status || '').toLowerCase(),
 
-    // Sugerencia de badge para la UI (si el componente lo usa)
-    __badge: isDirect ? 'Disponible' : undefined,
+    // Pista de UI para rotular precio en directa
+    __priceLabel: isDirect ? 'Precio' : undefined,
   }
 }
 
@@ -145,7 +141,7 @@ export default function BuyerDashboard(){
     })
   }
 
-  // Fetch obras recomendadas (reemplaza contenido estático del carrusel superior)
+  // Fetch obras recomendadas
   useEffect(()=>{
     let alive = true
     setRecLoading(true)
@@ -222,7 +218,6 @@ export default function BuyerDashboard(){
   }, [q, sort, tag, sale])
 
   const viewItems = items
-  const empty = !loading && !error && viewItems.length === 0
 
   const metrics = useMemo(()=>{
     const total = viewItems.length
@@ -312,7 +307,7 @@ export default function BuyerDashboard(){
       {/* GRID */}
       <div className="section-frame pb-16">
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl-grids-cols-4 gap-6">
             {Array.from({length:8}).map((_,i)=> <SkeletonCard key={i}/>)}
           </div>
         )}
@@ -334,7 +329,8 @@ export default function BuyerDashboard(){
                 isFav={favs.has(item.id)}
                 onToggleFav={()=>toggleFav(item.id)}
                 onView={()=> navigate(`/obra/${item.id}`)}
-                showShare={false}  // ⬅️ ocultar botón "Compartir"
+                showShare={false}                 // ocultar "Compartir"
+                priceLabel={item.__isDirect ? 'Precio' : undefined} // rotular “Precio” en directa
               />
             ))}
           </div>
