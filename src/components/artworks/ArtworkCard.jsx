@@ -1,15 +1,46 @@
 // src/components/artworks/ArtworkCard.jsx
 import { useState } from 'react'
 
-export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }) {
+export default function ArtworkCard({
+  item,
+  onView,
+  isFav = false,
+  onToggleFav,
+  showShare = true,            // ⬅️ permite ocultar el botón "Compartir"
+}) {
   const [loaded, setLoaded] = useState(false)
   const FALLBACK =
     'https://images.unsplash.com/photo-1549880338-65ddcdfd017b?q=80&w=1600&auto=format&fit=crop'
 
-  const isDirect = !!item.directSale
-  const soldOut = !isDirect && item.fractionsLeft === 0
-  const soldPct = !isDirect ? Math.round(100 - (item.fractionsLeft / item.fractionsTotal) * 100) : 0
-  const initials = item.artist.split(' ').map(s => s[0]).slice(0, 2).join('')
+  // --- DETECCIÓN CONFIABLE DE VENTA DIRECTA ---
+  const boolishTrue = (v) =>
+    v === true || v === 1 || v === '1' || (typeof v === 'string' && v.toLowerCase() === 'true')
+
+  const isDirect =
+    !!item?.__isDirect ||
+    boolishTrue(item?.directSale) ||
+    boolishTrue(item?.venta_directa)
+
+  const isSoldDirect = isDirect && (item?.__estadoVenta === 'vendida' || item?.sold === true)
+
+  // --- CÁLCULO SEGURO DE % VENDIDO PARA TOKENIZADAS ---
+  const hasFracNumbers =
+    !isDirect &&
+    Number.isFinite(Number(item?.fractionsLeft)) &&
+    Number.isFinite(Number(item?.fractionsTotal)) &&
+    Number(item?.fractionsTotal) > 0
+
+  const soldPct = hasFracNumbers
+    ? Math.round(100 - (Number(item.fractionsLeft) / Number(item.fractionsTotal)) * 100)
+    : 0
+
+  const soldOut = !isDirect && Number(item?.fractionsLeft) === 0
+
+  const initials = String(item?.artist || '')
+    .split(' ')
+    .map((s) => s[0])
+    .slice(0, 2)
+    .join('')
 
   return (
     <article className="group overflow-hidden rounded-3xl card-surface hover:shadow-2xl transition">
@@ -34,16 +65,20 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
         {/* badges */}
         <div className="absolute left-3 top-3 flex gap-2">
           {isDirect ? (
-            <span className="rounded-full bg-emerald-600 text-white text-xs px-3 py-1 shadow">
-              Venta directa
-            </span>
+            isSoldDirect ? (
+              <span className="rounded-full bg-slate-900/80 text-white text-xs px-3 py-1">Agotado</span>
+            ) : (
+              <span className="rounded-full bg-emerald-600 text-white text-xs px-3 py-1 shadow">
+                Disponible
+              </span>
+            )
           ) : soldOut ? (
             <span className="rounded-full bg-slate-900/80 text-white text-xs px-3 py-1">Agotado</span>
-          ) : (
+          ) : hasFracNumbers ? (
             <span className="rounded-full bg-white/90 text-slate-900 text-xs px-3 py-1 shadow">
               {soldPct}% vendido
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* like */}
@@ -63,7 +98,7 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
       <div className="p-4">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-full bg-indigo-600 text-white text-xs font-bold">
-            {initials}
+            {initials || '•'}
           </div>
           <div>
             <h3 className="font-semibold text-slate-900 leading-tight line-clamp-1">{item.title}</h3>
@@ -81,6 +116,7 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
               <>
                 <div className="text-[11px] uppercase tracking-wider text-slate-500">Precio</div>
                 <div className="text-lg font-extrabold">${fmt(item.directPrice || item.price)}</div>
+                {/* sin "Fracciones desde..." en venta directa */}
               </>
             ) : (
               <>
@@ -91,18 +127,21 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
             )}
           </div>
 
+          {/* Oculto completamente el bloque de "Disponibles" en venta directa */}
           {!isDirect && (
             <div className="text-right">
               <div className="text-[11px] uppercase tracking-wider text-slate-500">Disponibles</div>
               <div className={`text-sm font-semibold ${soldOut ? 'text-red-600' : 'text-emerald-600'}`}>
-                {item.fractionsLeft}/{item.fractionsTotal}
+                {Number.isFinite(Number(item.fractionsLeft)) ? Number(item.fractionsLeft) : '-'}
+                /
+                {Number.isFinite(Number(item.fractionsTotal)) ? Number(item.fractionsTotal) : '-'}
               </div>
             </div>
           )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {item.tags.map((t) => (
+          {Array.isArray(item.tags) && item.tags.map((t) => (
             <span
               key={t}
               className="rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 text-xs text-slate-700"
@@ -116,9 +155,11 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
           <button onClick={() => onView?.(item)} className="btn btn-primary flex-1">
             Ver obra
           </button>
-          <button className="btn btn-outline" title="Compartir">
-            <ShareIcon className="h-4 w-4" />
-          </button>
+          {showShare && (
+            <button className="btn btn-outline" title="Compartir">
+              <ShareIcon className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </article>
@@ -127,7 +168,7 @@ export default function ArtworkCard({ item, onView, isFav = false, onToggleFav }
 
 function fmt(n) { return Number(n||0).toLocaleString('es-AR') }
 
-function HeartIcon({ className='', filled=false }){ /* igual que antes */ 
+function HeartIcon({ className='', filled=false }){ 
   return filled ? (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41.81 4.5 2.09C12.09 4.81 13.76 4 15.5 4 18 4 20 6 20 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
