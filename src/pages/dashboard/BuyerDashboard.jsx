@@ -40,10 +40,8 @@ const round1 = (n) => Math.round(Number(n || 0) * 10) / 10
  */
 const detectDirect = (a) => {
   const vd = a?.venta_directa
-  // Si está explícito, respetar y no caer a fallback
   if (vd === true || vd === 1 || vd === '1' || vd === 'true') return true
   if (vd === false || vd === 0 || vd === '0' || vd === 'false') return false
-
   // Fallback SOLO si el backend no envió el campo
   const noFraction = a?.fractionFrom == null
   const noTotals   = a?.fractionsTotal == null
@@ -54,26 +52,44 @@ const detectDirect = (a) => {
 const mapApiItemToCard = (a) => {
   const isDirect = detectDirect(a)
 
-  const fractionsTotal = isDirect ? 1 : Number(a.fractionsTotal || 0)
-  let fractionsLeft = isDirect ? 1 : a.fractionsLeft
-  // si el back no envía fractionsLeft pero sí fractionsTotal, asumimos todo disponible
-  if (!isDirect && fractionsLeft == null) fractionsLeft = fractionsTotal
+  // Valores por defecto (tokenizadas)
+  let fractionsTotal = Number(a.fractionsTotal || 0)
+  let fractionsLeft  = a.fractionsLeft
+  if (fractionsLeft == null) fractionsLeft = fractionsTotal
+  let fractionFrom   = Number(a.fractionFrom || 0)
+
+  // --- OVERRIDES UI: venta directa ---
+  // Para venta directa ocultamos cualquier rastro de fracciones en la card:
+  // - nada de “0% vendido” -> el componente no podrá calcular % si no hay totales
+  // - nada de “Fracciones desde $ …” -> no enviamos fractionFrom
+  // - nada de “Disponibles 1/1” -> no enviamos totals/left
+  // Además mandamos un badge textual para que la card pueda mostrar “Disponible” si lo contempla.
+  if (isDirect) {
+    fractionsTotal = undefined
+    fractionsLeft  = undefined
+    fractionFrom   = undefined
+  }
 
   return {
     id: a.id,
     title: a.title,
     artist: a.artist?.name || a.artist || '',
-    price: Number(a.price || 0),
-    fractionFrom: Number(a.fractionFrom || 0),
-    fractionsTotal,
-    fractionsLeft: Number(fractionsLeft || 0),
+    price: Number(a.price || 0),          // precio final en venta directa
+    fractionFrom: fractionFrom,           // undefined en directa -> oculta leyenda “Fracciones desde…”
+    fractionsTotal: fractionsTotal,       // undefined en directa -> oculta % y “Disponibles”
+    fractionsLeft: Number(fractionsLeft ?? 0),
     image: fixImageUrl(a.image),
     tags: Array.isArray(a.tags) ? a.tags : (a.tags ? [String(a.tags)] : []),
     rating: round1(a.rating?.avg),
     createdAt: a.createdAt,
+
+    // Flags internos para lógicas de disponibilidad/badges
     __isDirect: isDirect,
     __estadoVenta: String(a.estado_venta || '').toLowerCase(),
-    __status: String(a.status || '').toLowerCase(), // "Approved" -> "approved"
+    __status: String(a.status || '').toLowerCase(),
+
+    // Sugerencia de badge para la UI (si el componente lo usa)
+    __badge: isDirect ? 'Disponible' : undefined,
   }
 }
 
@@ -182,11 +198,11 @@ export default function BuyerDashboard(){
                   : []
         let mapped = list.map(mapApiItemToCard).filter(isAvailable)
 
-        // Filtro por tipo de venta (UI) — ahora confiable con venta_directa explícito
+        // Filtro por tipo de venta (UI)
         if (sale === 'direct') mapped = mapped.filter(x => x.__isDirect)
         if (sale === 'tokenized') mapped = mapped.filter(x => !x.__isDirect)
 
-        // Filtro por tag (cliente) — case-insensitive y sin acentos
+        // Filtro por tag (cliente)
         if (tag?.trim()) {
           const wanted = norm(tag)
           mapped = mapped.filter(it => (it.tags || []).some(t => norm(t) === wanted))
@@ -222,7 +238,6 @@ export default function BuyerDashboard(){
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className='mt-8'>
-        {/* Le pasamos las recomendadas que vienen del backend */}
         <RecommendedRow
           items={recommended}
           loading={recLoading}
@@ -319,6 +334,7 @@ export default function BuyerDashboard(){
                 isFav={favs.has(item.id)}
                 onToggleFav={()=>toggleFav(item.id)}
                 onView={()=> navigate(`/obra/${item.id}`)}
+                showShare={false}  // ⬅️ ocultar botón "Compartir"
               />
             ))}
           </div>
