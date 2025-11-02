@@ -315,7 +315,7 @@ export default function ArtworkDetail(){
     }
   }
 
-  // compra: REAL para tokenizadas y MOCK para venta directa
+  // compra: REAL para tokenizadas y POST mark-as-sold para venta directa
   const handleBuy = async () => {
     setBuying(true); setBuyErr('')
     try {
@@ -372,9 +372,36 @@ export default function ArtworkDetail(){
 
         setBuyOk(true)
       } else {
-        // VENTA DIRECTA -> se mantiene mock (como estaba antes)
-        await mockBuyDirect({ user, artworkId: data.id, price: unit })
-        setData(prev => ({ ...prev, status: 'sold', estado_venta: 'vendida', fractionsLeft: 0 }))
+        // ===== VENTA DIRECTA → usar endpoint mark-as-sold =====
+        // (reemplaza el mock)
+        const res = await authService.client.post(`/artworks/${data.id}/mark-as-sold/`)
+        const body = res?.data
+
+        // Si el backend devuelve "ya vendida"
+        if (body && typeof body === 'object' && 'message' in body) {
+          // Actualizamos estado local a vendida y mostramos mensaje
+          setData(prev => ({
+            ...prev,
+            estado_venta: 'vendida',
+            status: String(prev?.status || '').toLowerCase(),
+            fractionsLeft: 0,
+          }))
+          throw new Error('La obra ya está marcada como vendida.')
+        }
+
+        // Éxito: el backend devuelve el objeto actualizado
+        setData(prev => ({
+          ...prev,
+          // tomamos campos relevantes de la respuesta (con fallbacks elegantes)
+          status: String(coalesce(body, ['status']) || prev?.status || '').toLowerCase(),
+          estado_venta: String(coalesce(body, ['estado_venta', 'estadoVenta']) || 'vendida').toLowerCase(),
+          fractionsLeft: toNum(coalesce(body, ['fractionsLeft', 'fractions_left']), 0),
+          fractionsTotal: toNum(coalesce(body, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? 1),
+          price: toNum(coalesce(body, ['price', 'precio']), prev?.price ?? 0),
+          fractionFrom: toNum(coalesce(body, ['fractionFrom', 'fraction_from']), prev?.fractionFrom ?? 0),
+          // mantenemos directSale como venía
+        }))
+
         setBuyOk(true)
       }
     } catch(e){
