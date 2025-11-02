@@ -33,11 +33,18 @@ const norm = (s) =>
 /** Redondeo a 1 decimal (manteniendo número) */
 const round1 = (n) => Math.round(Number(n || 0) * 10) / 10
 
-/** ¿Es venta directa? usa campo de API y un fallback por nulos */
+/**
+ * ¿Es venta directa?
+ * - Usa el campo `venta_directa` del backend si viene presente (true/false, 1/0, 'true'/'false', '1'/'0').
+ * - Solo si viene nulo/undefined aplica fallback heurístico.
+ */
 const detectDirect = (a) => {
   const vd = a?.venta_directa
-  if (vd === 1 || vd === true || vd === '1') return true
-  // Fallback: si no hay fracción ni totales, lo tratamos como directa
+  // Si está explícito, respetar y no caer a fallback
+  if (vd === true || vd === 1 || vd === '1' || vd === 'true') return true
+  if (vd === false || vd === 0 || vd === '0' || vd === 'false') return false
+
+  // Fallback SOLO si el backend no envió el campo
   const noFraction = a?.fractionFrom == null
   const noTotals   = a?.fractionsTotal == null
   return !!(noFraction && noTotals)
@@ -162,7 +169,6 @@ export default function BuyerDashboard(){
 
     const params = {}
     if (q?.trim()) params.q = q.trim()
-    // ⚠️ No enviamos ?tag= al backend para evitar el 500 (filtramos local)
     const apiSort = toApiSort(sort)
     if (apiSort) params.sort = apiSort
 
@@ -176,7 +182,7 @@ export default function BuyerDashboard(){
                   : []
         let mapped = list.map(mapApiItemToCard).filter(isAvailable)
 
-        // Filtro por tipo de venta (UI)
+        // Filtro por tipo de venta (UI) — ahora confiable con venta_directa explícito
         if (sale === 'direct') mapped = mapped.filter(x => x.__isDirect)
         if (sale === 'tokenized') mapped = mapped.filter(x => !x.__isDirect)
 
@@ -302,9 +308,9 @@ export default function BuyerDashboard(){
           </div>
         )}
 
-        {empty && <EmptyState/>}
+        {!loading && !error && viewItems.length === 0 && <EmptyState/>}
 
-        {!loading && !error && !empty && (
+        {!loading && !error && viewItems.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {viewItems.map(item => (
               <ArtworkCard
