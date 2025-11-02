@@ -318,10 +318,24 @@ export default function ArtworkDetail(){
   // compra: REAL para tokenizadas y POST mark-as-sold para venta directa
   const handleBuy = async () => {
     setBuying(true); setBuyErr('')
+
+    // ✅ Guardia inmediata: no permitir comprar si ya está vendida
+    if (data?.estado_venta === 'vendida' || data?.status === 'sold') {
+      setBuyErr('La obra ya está vendida.')
+      setBuying(false)
+      return
+    }
+
     try {
       // refresco rápido del estado por si cambió algo en back (solo GET)
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
       const directFresh = detectDirect(fresh)
+      const estadoFresh = String(coalesce(fresh, ['estado_venta', 'estadoVenta']) || '').toLowerCase()
+
+      // ✅ Si el backend ya la marca vendida, abortar
+      if (estadoFresh === 'vendida' || String(coalesce(fresh, ['status'])||'').toLowerCase()==='sold') {
+        throw new Error('La obra ya está vendida.')
+      }
 
       // normalizar totales y disponibles desde el back
       const frTotal = directFresh
@@ -332,7 +346,7 @@ export default function ArtworkDetail(){
         : (() => {
             const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
             if (left !== undefined) return toNum(left, 0)
-            return frTotal // fallback razonable si el back no devuelve left
+            return frTotal
           })()
 
       if (!directFresh) {
@@ -373,33 +387,27 @@ export default function ArtworkDetail(){
         setBuyOk(true)
       } else {
         // ===== VENTA DIRECTA → usar endpoint mark-as-sold =====
-        // (reemplaza el mock)
         const res = await authService.client.post(`/artworks/${data.id}/mark-as-sold/`)
         const body = res?.data
 
-        // Si el backend devuelve "ya vendida"
         if (body && typeof body === 'object' && 'message' in body) {
-          // Actualizamos estado local a vendida y mostramos mensaje
           setData(prev => ({
             ...prev,
             estado_venta: 'vendida',
             status: String(prev?.status || '').toLowerCase(),
             fractionsLeft: 0,
           }))
-          throw new Error('La obra ya está marcada como vendida.')
+          throw new Error('La obra ya está vendida.')
         }
 
-        // Éxito: el backend devuelve el objeto actualizado
         setData(prev => ({
           ...prev,
-          // tomamos campos relevantes de la respuesta (con fallbacks elegantes)
           status: String(coalesce(body, ['status']) || prev?.status || '').toLowerCase(),
           estado_venta: String(coalesce(body, ['estado_venta', 'estadoVenta']) || 'vendida').toLowerCase(),
           fractionsLeft: toNum(coalesce(body, ['fractionsLeft', 'fractions_left']), 0),
           fractionsTotal: toNum(coalesce(body, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? 1),
           price: toNum(coalesce(body, ['price', 'precio']), prev?.price ?? 0),
           fractionFrom: toNum(coalesce(body, ['fractionFrom', 'fraction_from']), prev?.fractionFrom ?? 0),
-          // mantenemos directSale como venía
         }))
 
         setBuyOk(true)
@@ -524,18 +532,20 @@ export default function ArtworkDetail(){
 
               <div className="flex gap-2 pt-2">
                 <button
-                  className={`btn flex-1 disabled:opacity-60 ${(!isDirect && isAuctioned) || (isDirect && isSold) ? 'btn-outline' : 'btn-primary'}`}
-                  disabled={!canBuy || (!isDirect && isAuctioned) || (isDirect && isSold)}
+                  className={`btn flex-1 disabled:opacity-60 ${(!isDirect && isAuctioned) || isSold ? 'btn-outline' : 'btn-primary'}`}
+                  disabled={!canBuy || (!isDirect && isAuctioned) || isSold}
                   onClick={()=> setBuyOpen(true)}
                   title={
                     !canBuy
                       ? 'Iniciá sesión para comprar'
-                      : isDirect
-                        ? (isSold ? 'Obra vendida' : 'Comprar obra')
-                        : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
+                      : isSold
+                        ? 'Obra vendida'
+                        : isDirect
+                          ? 'Comprar obra'
+                          : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
                   }
                 >
-                  {isDirect ? (isSold ? 'Obra vendida' : 'Comprar') : (isAuctioned ? 'Obra subastada' : 'Comprar fracción')}
+                  {isSold ? 'Obra vendida' : (isDirect ? 'Comprar' : (isAuctioned ? 'Obra subastada' : 'Comprar fracción'))}
                 </button>
                 <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
               </div>
@@ -636,10 +646,10 @@ export default function ArtworkDetail(){
                     <button className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
                     <button
                       className="btn btn-primary flex-1 disabled:opacity-60"
-                      disabled={buying || (!isDirect && (!qty || qty < 1))}
+                      disabled={buying || isSold || (!isDirect && (!qty || qty < 1))}
                       onClick={handleBuy}
                     >
-                      {buying ? 'Procesando…' : `Comprar por $${fmt(total)}`}
+                      {buying ? 'Procesando…' : (isSold ? 'Obra vendida' : `Comprar por $${fmt(total)}`)}
                     </button>
                   </div>
                 </>
