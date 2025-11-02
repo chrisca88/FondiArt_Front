@@ -66,7 +66,7 @@ export default function ArtistDonate(){
     return ()=>{ alive = false }
   }, [slug])
 
-  /* 2) Resolver artistId desde /artists/ usando el mismo slugify */
+  /* 2) Resolver artistId desde /artists/ y tomar avatar + bio reales */
   useEffect(()=>{
     let alive = true
     setArtistId(null)
@@ -82,11 +82,25 @@ export default function ArtistDonate(){
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
         const found = results.find(a => slugify(a?.name || '') === slug)
+
         if (import.meta.env.DEV) {
           console.log('[ARTIST DONATE] /artists response count=', results.length, 'matchId=', found?.id, 'matchName=', found?.name)
         }
+
         if (found?.id != null) {
           setArtistId(Number(found.id))
+        }
+
+        // ⬇️ NUEVO: actualizar avatar y bio desde la API real
+        if (found) {
+          const avatar = fixImageUrl(found.avatarUrl)
+          const bio = found.bio || ''
+          setData(prev => ({
+            ...(prev || {}),
+            name: found.name || prev?.name || '',
+            avatar: avatar || prev?.avatar || null,
+            bio: bio || prev?.bio || ''
+          }))
         }
       })
       .catch(e=>{
@@ -234,8 +248,8 @@ export default function ArtistDonate(){
     setSaving(true)
     try{
       const body = {
-        artist_id: Number(artistId),       // <- clave exacta del backend
-        amount: Number(v).toFixed(2),      // <- string decimal con 2 dígitos
+        artist_id: Number(artistId),
+        amount: Number(v).toFixed(2),
       }
 
       const path = '/finance/donations/'
@@ -299,7 +313,9 @@ export default function ArtistDonate(){
                 )}
               </div>
             </div>
-            <p className="mt-4 text-slate-700 leading-relaxed">{data.bio || 'El artista aún no agregó una biografía.'}</p>
+            <p className="mt-4 text-slate-700 leading-relaxed">
+              {data.bio || 'El artista aún no agregó una biografía.'}
+            </p>
 
             {/* Donar */}
             <div className="mt-6 rounded-2xl border border-slate-200 bg-white/70 p-4">
