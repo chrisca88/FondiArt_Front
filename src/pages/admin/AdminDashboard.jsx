@@ -21,14 +21,37 @@ export default function AdminDashboard(){
       try {
         const params = new URLSearchParams()
         if (q) params.set('q', q)
-        
-        const { data } = await api.get(`/api/v1/artworks/?${params.toString()}`)
+
+        const url = `/api/v1/artworks/?${params.toString()}`
+        // 🔎 Logs de depuración del request
+        console.log('[AdminDashboard] Fetching artworks...', {
+          url,
+          params: Object.fromEntries(params.entries())
+        })
+
+        const res = await api.get(url)
+
+        // 🔎 Logs de depuración de la respuesta cruda
+        console.log('[AdminDashboard] Response status:', res?.status)
+        console.log('[AdminDashboard] Raw data:', res?.data)
+
+        const data = res?.data
+        // ✅ Normalización: soporta { results: [] } o [] directo
+        const normalized = Array.isArray(data) ? data : (data?.results || [])
+
+        console.log('[AdminDashboard] Normalized items count:', normalized.length)
+
         if(alive){
-          setAllArtworks(data.results || [])
+          setAllArtworks(normalized)
         }
       } catch (err) {
         if(alive){
-          console.error("Error fetching artworks for admin:", err)
+          // 🔎 Logs detallados del error (incluye payload del backend si existe)
+          console.error('[AdminDashboard] Error fetching artworks for admin:', {
+            message: err?.message,
+            status: err?.response?.status,
+            data: err?.response?.data
+          })
           setAllArtworks([])
           // Optionally set an error state to show in the UI
         }
