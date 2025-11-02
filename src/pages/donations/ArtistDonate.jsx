@@ -86,26 +86,39 @@ export default function ArtistDonate(){
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
         if (import.meta.env.DEV) {
           console.log('[ARTIST DONATE] /artists STATUS=', res?.status)
-          console.log('[ARTIST DONATE] /artists RAW payload=', payload)
           console.log('[ARTIST DONATE] /artists results.length=', results.length)
+          console.log('[ARTIST DONATE] names=', results.map(a => a?.name))
+          console.log('[ARTIST DONATE] slugs=', results.map(a => [a?.name, slugify(a?.name||'')]))
         }
 
-        const found = results.find(a => slugify(a?.name || '') === slug)
+        // — Estrategias de match —
+        const bySlug = results.find(a => slugify(a?.name || '') === slug)
+        const byName = results.find(a => String(a?.name||'').toLowerCase().trim() === (data?.name||'').toLowerCase().trim())
+        const byLoose = results.find(a => slugify(String(a?.name||'').replace(/\s+/g,'-')) === slug)
+
+        const found = bySlug || byName || byLoose
         if (import.meta.env.DEV) {
+          console.log('[ARTIST DONATE] matched by ->',
+            bySlug ? 'slug' : byName ? 'name' : byLoose ? 'loose' : 'none')
           console.log('[ARTIST DONATE] matched artist ->', found)
+          if (found) {
+            console.log('[ARTIST DONATE] found.bio len =', typeof found.bio === 'string' ? found.bio.length : '(not string)')
+            console.log('[ARTIST DONATE] found.avatarUrl =', found.avatarUrl)
+          }
         }
 
         if (found?.id != null) setArtistId(Number(found.id))
 
-        // traer SIEMPRE bio y avatarUrl si existen (no usamos "avatar" local)
+        // Merge sólo si vienen valores NO vacíos
         if (found) {
-          const avatarUrl = fixImageUrl(found.avatarUrl)
+          const avatarUrl = fixImageUrl(found.avatarUrl || '')
           const bio = typeof found.bio === 'string' ? found.bio : ''
+
           setData(prev => {
             const next = {
               ...(prev || {}),
               name: found.name ?? prev?.name,
-              avatarUrl: avatarUrl || prev?.avatarUrl || null,
+              avatarUrl: avatarUrl && avatarUrl.trim() ? avatarUrl : (prev?.avatarUrl || null),
               bio: bio && bio.trim() ? bio : (prev?.bio || '')
             }
             if (import.meta.env.DEV) console.log('[ARTIST DONATE] setData merge ->', next)
@@ -121,7 +134,7 @@ export default function ArtistDonate(){
       })
 
     return ()=>{ alive = false }
-  }, [slug])
+  }, [slug, data?.name]) // ← si el mock trae el name, reintento el match por nombre
 
   // Log cada vez que cambia "data"
   useEffect(()=>{
