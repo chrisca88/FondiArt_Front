@@ -58,15 +58,18 @@ export default function ArtistDonate(){
     setLoading(true)
     setErr('')
 
+    if (import.meta.env.DEV) console.log('[ARTIST DONATE] slug =', slug)
+
     getArtistProfile(slug).then(p=>{
       if(!alive) return
+      if (import.meta.env.DEV) console.log('[ARTIST DONATE] mock profile ->', p)
       setData(p); setLoading(false)
     })
 
     return ()=>{ alive = false }
   }, [slug])
 
-  /* 2) Resolver artistId desde /artists/ y **fusionar** avatar + bio reales */
+  /* 2) Resolver artistId desde /artists/ y fusionar avatarUrl + bio reales */
   useEffect(()=>{
     let alive = true
     setArtistId(null)
@@ -81,26 +84,33 @@ export default function ArtistDonate(){
         if(!alive) return
         const payload = res?.data
         const results = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-        const found = results.find(a => slugify(a?.name || '') === slug)
-
         if (import.meta.env.DEV) {
-          console.log('[ARTIST DONATE] /artists response count=', results.length, 'matchId=', found?.id, 'matchName=', found?.name)
+          console.log('[ARTIST DONATE] /artists STATUS=', res?.status)
+          console.log('[ARTIST DONATE] /artists RAW payload=', payload)
+          console.log('[ARTIST DONATE] /artists results.length=', results.length)
+        }
+
+        const found = results.find(a => slugify(a?.name || '') === slug)
+        if (import.meta.env.DEV) {
+          console.log('[ARTIST DONATE] matched artist ->', found)
         }
 
         if (found?.id != null) setArtistId(Number(found.id))
 
-        // ⬇️ clave: traer SIEMPRE bio y avatarUrl si existen
+        // traer SIEMPRE bio y avatarUrl si existen (no usamos "avatar" local)
         if (found) {
           const avatarUrl = fixImageUrl(found.avatarUrl)
           const bio = typeof found.bio === 'string' ? found.bio : ''
-          setData(prev => ({
-            ...(prev || {}),
-            name: found.name ?? prev?.name,
-            // si viene vacío no sobreescribo
-            avatar: avatarUrl || prev?.avatar || prev?.avatarUrl || null,
-            avatarUrl: avatarUrl || prev?.avatarUrl || prev?.avatar || null,
-            bio: bio.trim() ? bio : (prev?.bio || '')
-          }))
+          setData(prev => {
+            const next = {
+              ...(prev || {}),
+              name: found.name ?? prev?.name,
+              avatarUrl: avatarUrl || prev?.avatarUrl || null,
+              bio: bio && bio.trim() ? bio : (prev?.bio || '')
+            }
+            if (import.meta.env.DEV) console.log('[ARTIST DONATE] setData merge ->', next)
+            return next
+          })
         }
       })
       .catch(e=>{
@@ -112,6 +122,15 @@ export default function ArtistDonate(){
 
     return ()=>{ alive = false }
   }, [slug])
+
+  // Log cada vez que cambia "data"
+  useEffect(()=>{
+    if (import.meta.env.DEV && data) {
+      console.log('[ARTIST DONATE] data changed ->', data)
+      console.log('[ARTIST DONATE] render avatarUrl ->', data.avatarUrl)
+      console.log('[ARTIST DONATE] render bio (len) ->', (data.bio || '').length)
+    }
+  }, [data])
 
   /* 3) Con el artistId, pedir OBRAS: /users/<id>/artworks/ */
   useEffect(()=>{
@@ -305,7 +324,7 @@ export default function ArtistDonate(){
           {/* Perfil */}
           <div className="lg:col-span-2 card-surface p-6">
             <div className="flex items-center gap-4">
-              <Avatar name={data.name} src={data.avatar || data.avatarUrl} size={14}/>
+              <Avatar name={data.name} src={data.avatarUrl} size={14}/>
               <div>
                 <h1 className="text-2xl font-extrabold leading-tight">{data.name}</h1>
                 {data.socials?.website && (
