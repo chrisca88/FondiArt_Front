@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import api from '../utils/api' // <-- agregado
+import api from '../../utils/api' // <-- agregado
 
 export default function ForgotPassword(){
   const [email, setEmail] = useState('')
