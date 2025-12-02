@@ -449,6 +449,7 @@ export default function Wallet(){
               onTransfer={startTransferFlow}
               transferLoading={transferLoading}
               onDeposit={()=> navigate('/wallet/ingresar')} // NUEVO
+              onMovements={()=> navigate('/wallet/movimientos')} // <-- saldo clickeable en header
             />
           </div>
 
@@ -532,9 +533,7 @@ export default function Wallet(){
             loading={cashLoading}
             error={cashError}
             masked={!showAmounts}
-            onClick={()=> navigate('/wallet/movimientos')}
           />
-
 
           {/* Tokens desde API + holdings */}
           {(tokensLoading) ? (
@@ -663,7 +662,7 @@ function TransferModal({ balance, amount, setAmount, onClose, onConfirm, onAll, 
 }
 
 /* -------------------- Filas -------------------- */
-function RowARS({ cash = 0, masked = false, loading, error, onClick }){
+function RowARS({ cash = 0, masked = false, loading, error }){
   const renderValue = (val) => {
     if (loading) return <span className="text-slate-400">Cargando…</span>
     if (error) return <span className="text-red-500">Error</span>
@@ -684,20 +683,13 @@ function RowARS({ cash = 0, masked = false, loading, error, onClick }){
       </div>
       <div className="col-span-2 text-right text-slate-600">—</div>
       <div className="col-span-2 text-right font-semibold">{renderValue(qty)}</div>
-      {/* monto en pesos clickeable */}
-      <div
-        className="col-span-2 text-right font-extrabold cursor-pointer hover:text-indigo-700 hover:underline"
-        onClick={onClick}
-      >
-        {renderValue(val)}
-      </div>
+      <div className="col-span-2 text-right font-extrabold">{renderValue(val)}</div>
       <div className="col-span-2 text-right">
         <span className="inline-block text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-1">—</span>
       </div>
     </div>
   )
 }
-
 
 function RowToken({ item, masked = false, onBuy }){
   const showQty = Number.isFinite(Number(item.qty)) ? fmt(item.qty) : '—'
@@ -708,7 +700,7 @@ function RowToken({ item, masked = false, onBuy }){
   return (
     <>
       <div className="h-px bg-slate-200/60" />
-      <div className="grid grid-cols-12 items-center px-4 py-3">
+      <div className="grid grid-cols-12 items中心 gap-3 px-4 py-3">
         <div className="col-span-4 flex items中心 gap-3">
           {item.image ? (
             <img src={item.image} alt={item.title} className="h-9 w-9 rounded-full object-cover"/>
@@ -750,7 +742,8 @@ function BalanceBox({
   error,
   onTransfer,
   transferLoading,
-  onDeposit // NUEVO
+  onDeposit, // NUEVO
+  onMovements // NUEVO: click en saldo del header
 }){
   const renderContent = () => {
     if (loading) return <div className="text-sm text-slate-500">Cargando saldo…</div>
@@ -770,7 +763,12 @@ function BalanceBox({
         {masked ? <EyeOffIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}
       </button>
 
-      <div className="text-2xl font-extrabold">{renderContent()}</div>
+      <div
+        className="text-2xl font-extrabold cursor-pointer hover:text-indigo-700 hover:underline"
+        onClick={onMovements}
+      >
+        {renderContent()}
+      </div>
       <div className="text-[11px] tracking-wider uppercase text-slate-500">Saldo en pesos</div>
 
       {/* Botón Transferir (abre flujo) */}

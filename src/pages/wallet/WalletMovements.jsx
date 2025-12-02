@@ -136,29 +136,48 @@ export default function WalletMovements(){
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {items.map(mov => (
-                    <tr key={mov.id}>
-                      <td className="px-6 py-3 text-slate-700">
-                        {formatDate(mov.fecha)}
-                      </td>
-                      <td className="px-6 py-3 text-slate-700">
-                        {mov.tipo || '—'}
-                      </td>
-                      <td className="px-6 py-3 text-slate-700">
-                        {mov.tipoMovimiento === 'ingreso'
-                          ? 'Ingreso'
-                          : mov.tipoMovimiento === 'egreso'
-                          ? 'Egreso'
-                          : mov.tipoMovimiento || '—'}
-                      </td>
-                      <td className="px-6 py-3 text-right font-semibold text-slate-900">
-                        {fmtARS(mov.monto)}
-                      </td>
-                      <td className="px-6 py-3 text-slate-700">
-                        {mov.destino || '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map(mov => {
+                    const isIngreso = mov.tipoMovimiento === 'ingreso'
+                    const isEgreso = mov.tipoMovimiento === 'egreso'
+                    const movimientoLabel =
+                      mov.tipoMovimiento === 'ingreso'
+                        ? 'Ingreso'
+                        : mov.tipoMovimiento === 'egreso'
+                        ? 'Egreso'
+                        : mov.tipoMovimiento || '—'
+
+                    const movimientoClass = isIngreso
+                      ? 'px-6 py-3 text-emerald-600 font-semibold'
+                      : isEgreso
+                      ? 'px-6 py-3 text-red-600 font-semibold'
+                      : 'px-6 py-3 text-slate-700'
+
+                    const montoClass = isIngreso
+                      ? 'px-6 py-3 text-right font-semibold text-emerald-600'
+                      : isEgreso
+                      ? 'px-6 py-3 text-right font-semibold text-red-600'
+                      : 'px-6 py-3 text-right font-semibold text-slate-900'
+
+                    return (
+                      <tr key={mov.id}>
+                        <td className="px-6 py-3 text-slate-700">
+                          {formatDate(mov.fecha)}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700">
+                          {mov.tipo || '—'}
+                        </td>
+                        <td className={movimientoClass}>
+                          {movimientoLabel}
+                        </td>
+                        <td className={montoClass}>
+                          {fmtARS(mov.monto)}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700">
+                          {mov.destino || '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
