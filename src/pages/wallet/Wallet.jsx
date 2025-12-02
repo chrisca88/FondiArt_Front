@@ -527,7 +527,14 @@ export default function Wallet(){
           <div className="h-px bg-slate-200/70" />
 
           {/* Fila de ARS */}
-          <RowARS cash={cashARS} loading={cashLoading} error={cashError} masked={!showAmounts} />
+          <RowARS
+            cash={cashARS}
+            loading={cashLoading}
+            error={cashError}
+            masked={!showAmounts}
+            onClick={()=> navigate('/wallet/movimientos')}
+          />
+
 
           {/* Tokens desde API + holdings */}
           {(tokensLoading) ? (
@@ -656,7 +663,7 @@ function TransferModal({ balance, amount, setAmount, onClose, onConfirm, onAll, 
 }
 
 /* -------------------- Filas -------------------- */
-function RowARS({ cash = 0, masked = false, loading, error }){
+function RowARS({ cash = 0, masked = false, loading, error, onClick }){
   const renderValue = (val) => {
     if (loading) return <span className="text-slate-400">Cargando…</span>
     if (error) return <span className="text-red-500">Error</span>
@@ -677,13 +684,20 @@ function RowARS({ cash = 0, masked = false, loading, error }){
       </div>
       <div className="col-span-2 text-right text-slate-600">—</div>
       <div className="col-span-2 text-right font-semibold">{renderValue(qty)}</div>
-      <div className="col-span-2 text-right font-extrabold">{renderValue(val)}</div>
+      {/* monto en pesos clickeable */}
+      <div
+        className="col-span-2 text-right font-extrabold cursor-pointer hover:text-indigo-700 hover:underline"
+        onClick={onClick}
+      >
+        {renderValue(val)}
+      </div>
       <div className="col-span-2 text-right">
         <span className="inline-block text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-1">—</span>
       </div>
     </div>
   )
 }
+
 
 function RowToken({ item, masked = false, onBuy }){
   const showQty = Number.isFinite(Number(item.qty)) ? fmt(item.qty) : '—'
