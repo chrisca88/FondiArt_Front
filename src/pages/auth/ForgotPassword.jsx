@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-// si tuvieras una action tipo forgotPassword en redux, la vamos a enchufar después
+import api from '../utils/api' // <-- agregado
 
 export default function ForgotPassword(){
   const [email, setEmail] = useState('')
@@ -14,12 +14,8 @@ export default function ForgotPassword(){
     setLoading(true)
 
     try {
-      // TODO: llamar endpoint de recuperación de contraseña
-      // Ejemplo esperado:
-      // await api.post('/api/v1/auth/forgot-password/', { email })
-
-      // Si no hay endpoint todavía, simulamos el éxito:
-      await new Promise(r => setTimeout(r, 600))
+      // llamada real al endpoint
+      await api.post('/auth/password-reset/', { email })
 
       setDone(true)
     } catch (err){
