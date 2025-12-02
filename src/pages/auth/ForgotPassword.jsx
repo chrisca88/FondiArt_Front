@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import api from '../../utils/api' // <-- agregado
+import api from '../../utils/api'
 
 export default function ForgotPassword(){
   const [email, setEmail] = useState('')
@@ -14,13 +14,18 @@ export default function ForgotPassword(){
     setLoading(true)
 
     try {
-      // llamada real al endpoint
       await api.post('api/v1/auth/password-reset/', { email })
 
       setDone(true)
     } catch (err){
       console.error('[ForgotPassword][ERROR]', err)
-      setError('No se pudo procesar tu solicitud. Intentá de nuevo.')
+
+      if (err?.response?.status === 404) {
+        setError('El email ingresado no corresponde a un usuario registrado.')
+      } else {
+        setError('No se pudo procesar tu solicitud. Intentá de nuevo.')
+      }
+      
     } finally {
       setLoading(false)
     }
