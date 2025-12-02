@@ -15,7 +15,7 @@ export default function ForgotPassword(){
 
     try {
       // llamada real al endpoint
-      await api.post('/auth/password-reset/', { email })
+      await api.post('api/v1/auth/password-reset/', { email })
 
       setDone(true)
     } catch (err){
