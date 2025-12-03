@@ -1,7 +1,30 @@
 // src/pages/wallet/DepositInfo.jsx
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import authService from '../../services/authService.js'
+import { useState } from 'react'
 
 export default function DepositInfo(){
+  const navigate = useNavigate()
+  const [sending, setSending] = useState(false)
+
+  async function handleConfirm(){
+    try {
+      setSending(true)
+
+      // llamada al endpoint real
+      await authService.client.post('/finance/credit-my-account/', {})
+
+      // redirige a wallet
+      navigate('/wallet')
+    } catch (err) {
+      console.error('[DepositInfo] ERROR credit-my-account:', err?.response?.data || err)
+      // Igual redirigimos porque el usuario ya hizo la transferencia
+      navigate('/wallet')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className="section-frame pt-10 pb-6">
@@ -84,8 +107,15 @@ export default function DepositInfo(){
             <li>Si el banco pide CUIT/CUIL: <strong>30-71234567-8</strong></li>
             <li>Si tu banco permite “alias”, ingresá exactamente el alias indicado arriba.</li>
           </ul>
+
           <div className="mt-4">
-            <Link to="/wallet" className="btn btn-primary">Ya hice la transferencia</Link>
+            <button
+              onClick={handleConfirm}
+              className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={sending}
+            >
+              {sending ? 'Procesando…' : 'Ya hice la transferencia'}
+            </button>
           </div>
         </div>
       </div>
