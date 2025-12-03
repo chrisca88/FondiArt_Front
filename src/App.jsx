@@ -66,7 +66,7 @@ export default function App(){
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
           <Route path="/mercado" element={<SecondaryMarket/>} />
-          <Route path="/cuenta/cambiar-contraseña" element={<ChangePassword />} />
+          <Route path="/cuenta/cambiar-password" element={<ChangePassword />} />
 
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />
