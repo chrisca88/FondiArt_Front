@@ -474,7 +474,7 @@ export default function Wallet(){
                 checked={hideSmall}
                 onChange={e=>setHideSmall(e.target.checked)}
               />
-              Ocultar activos de menos de $1
+              Ocultar activos sin saldo
             </label>
           </div>
         </div>
