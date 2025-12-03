@@ -241,7 +241,7 @@ export default function Register(){
             <label className="inline-flex items-center gap-2 select-none">
               <input type="checkbox" name="agree" className="checkbox" checked={form.agree} onChange={onChange}/>
               <span className="text-sm text-slate-700">
-                Acepto los <a className="text-indigo-600 hover:underline" href="#">términos y condiciones</a>.
+                Acepto los <a className="text-indigo-600 hover:underline" href="/tyc">términos y condiciones</a>.
               </span>
             </label>
 
