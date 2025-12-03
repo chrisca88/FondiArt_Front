@@ -9,6 +9,7 @@ import Login from './pages/auth/Login.jsx'
 import Register from './pages/auth/Register.jsx'
 import ForgotPassword from './pages/auth/ForgotPassword.jsx'
 import TerminosYCondiciones from './pages/tyc/TerminosYCondiciones.jsx'
+import ChangePassword from './pages/account/ChangePassword.jsx'
 
 import BuyerDashboard from './pages/dashboard/BuyerDashboard.jsx'
 import ArtistDashboard from './pages/dashboard/ArtistDashboard.jsx'
@@ -65,6 +66,7 @@ export default function App(){
           <Route path="/mis-obras" element={<MyWorks/>} />
           <Route path="/cuenta" element={<Profile/>} />
           <Route path="/mercado" element={<SecondaryMarket/>} />
+          <Route path="/cuenta/cambiar-contraseña" element={<ChangePassword />} />
 
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />

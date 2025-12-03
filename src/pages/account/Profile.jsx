@@ -1,6 +1,7 @@
 // src/pages/account/Profile.jsx
 import { useDispatch, useSelector } from 'react-redux'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom' // <-- NUEVO
 import { saveProfile } from '../../features/auth/authSlice.js'
 import authService from '../../services/authService.js'
 
@@ -9,6 +10,7 @@ export default function Profile(){
   const status = useSelector(s => s.auth.status)
   const error  = useSelector(s => s.auth.error)
   const dispatch = useDispatch()
+  const navigate = useNavigate() // <-- NUEVO
 
   // loading/err del fetch al nuevo endpoint
   const [profileLoading, setProfileLoading] = useState(false)
@@ -385,7 +387,7 @@ export default function Profile(){
             )}
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={handleSaveClick}
@@ -399,6 +401,15 @@ export default function Profile(){
                 : profileLoading
                 ? 'Cargando perfil…'
                 : 'Guardar cambios'}
+            </button>
+
+            {/* NUEVO BOTÓN: Cambiar contraseña */}
+            <button
+              type="button"
+              onClick={()=> navigate('/cuenta/cambiar-password')}
+              className="btn btn-outline"
+            >
+              Cambiar contraseña
             </button>
           </div>
         </form>
