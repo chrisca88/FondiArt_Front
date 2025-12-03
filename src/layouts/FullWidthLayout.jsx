@@ -40,7 +40,7 @@ export default function FullWidthLayout(){
       <footer className="border-t border-slate-200 bg-white/60">
         <div className="section-frame py-6 text-sm flex items-center justify-between text-slate-600">
           <div>© {new Date().getFullYear()} FondiArt</div>
-          <Link to="/tyc" className="hover:underline">Privacidad & Términos</Link>
+          <Link to="/tyc" className="hover:underline">Términos & Condiciones</Link>
         </div>
       </footer>
     </div>
