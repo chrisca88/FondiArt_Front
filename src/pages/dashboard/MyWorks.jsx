@@ -24,7 +24,7 @@ export default function MyWorks(){
     setLoading(true)
     setError(null)
     
-    api.get(`/api/v1/users/${user.id}/artworks/`)
+    api.get(`/users/${user.id}/artworks/`)
       .then(res => {
         if (!alive) return
         console.log('Artworks fetched successfully:', res.data)

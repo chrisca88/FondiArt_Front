@@ -24,7 +24,7 @@ export default function DonationsHistory(){
       return
     }
 
-    const path = `/finance/users/${user.id}/donations/` // baseURL ya incluye /api/v1
+    const path = `/finance/users/${user.id}/donations/`
     if (import.meta.env.DEV) {
       console.log('[DONATIONS HISTORY] GET', (authService.client.defaults.baseURL || '') + path)
     }

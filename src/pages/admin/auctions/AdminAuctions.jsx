@@ -17,7 +17,7 @@ export default function AdminAuctions(){
     let alive = true
     setLoading(true)
     setError(null)
-    api.get('/api/v1/auctions/').then(res=>{
+    api.get('/auctions/').then(res=>{
       if(!alive) return
       const payload = res?.data
       const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
@@ -87,7 +87,7 @@ export default function AdminAuctions(){
       return
     }
     try {
-      await api.delete(`/api/v1/auctions/${id}/`)
+      await api.delete(`/auctions/${id}/`)
       console.log(`Successfully deleted auction ID: ${id} from API.`);
       setAllAuctions(prev => {
         console.log("Previous auctions count:", prev.length);

@@ -21,7 +21,7 @@ export default function WalletMovements(){
       return
     }
 
-    const path = `/finance/users/${user.id}/movimientos/` // baseURL ya incluye /api/v1
+    const path = `/finance/users/${user.id}/movimientos/`
     if (import.meta.env.DEV) {
       console.log('[WALLET MOVEMENTS] GET', (authService.client.defaults.baseURL || '') + path)
     }

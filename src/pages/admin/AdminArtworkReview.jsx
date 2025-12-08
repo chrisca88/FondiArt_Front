@@ -35,7 +35,7 @@ export default function AdminArtworkReview(){
     let alive = true
     setLoading(true)
     setContractAddress(null)
-    api.get(`/api/v1/artworks/${id}/`).then(res => {
+    api.get(`/artworks/${id}/`).then(res => {
       if(!alive) return
       const item = res.data
       setData(item)
@@ -107,7 +107,7 @@ export default function AdminArtworkReview(){
         auctionDate,
         status: 'Approved'
       }
-      const { data: updatedArtwork } = await api.patch(`/api/v1/artworks/${data.id}/`, artworkUpdatePayload)
+      const { data: updatedArtwork } = await api.patch(`/artworks/${data.id}/`, artworkUpdatePayload)
 
       // 2. Create the auction
       const auctionDateISO = new Date(`${auctionDate}T20:00:00Z`).toISOString()
@@ -115,14 +115,14 @@ export default function AdminArtworkReview(){
         start_price: Number(basePrice).toFixed(2),
         auction_date: auctionDateISO,
       }
-      await api.post(`/api/v1/artworks/${data.id}/auctions/create/`, auctionPayload)
+      await api.post(`/artworks/${data.id}/auctions/create/`, auctionPayload)
 
       // 3. Tokenize the artwork (smart contract)
-      await api.post(`/api/v1/blockchain/tokenize/`, { artwork_id: data.id })
+      await api.post(`/blockchain/tokenize/`, { artwork_id: data.id })
 
       // 4. Distribución inicial de tokens al artista / pool inicial
       try {
-        await api.post(`/api/v1/blockchain/artwork/${data.id}/distribute/`)
+        await api.post(`/blockchain/artwork/${data.id}/distribute/`)
         console.log('[AdminArtworkReview] Distribución inicial realizada correctamente.')
       } catch (distErr) {
         console.warn('[AdminArtworkReview] Error al distribuir tokens inicialmente:', distErr?.response?.status, distErr?.message)
@@ -131,7 +131,7 @@ export default function AdminArtworkReview(){
 
       // 5. Re-fetch artwork data para reflejar dirección del contrato y estado final
       try {
-        const artworkRes = await api.get(`/api/v1/artworks/${data.id}/`)
+        const artworkRes = await api.get(`/artworks/${data.id}/`)
         setData(artworkRes.data)
         if (artworkRes.data.contract_address) {
           setContractAddress(artworkRes.data.contract_address)
@@ -156,7 +156,7 @@ export default function AdminArtworkReview(){
   async function findAuctionIdForArtwork(artworkId) {
     // 1) endpoint oficial
     try {
-      const res = await api.get(`/api/v1/artworks/${artworkId}/auction/`)
+      const res = await api.get(`/artworks/${artworkId}/auction/`)
       const auctionId = res?.data?.auction_id
       if (auctionId) return auctionId
     } catch (e) {
@@ -173,7 +173,7 @@ export default function AdminArtworkReview(){
     if (direct) return direct
 
     try {
-      const res = await api.get(`/api/v1/auctions/?artwork=${artworkId}`)
+      const res = await api.get(`/auctions/?artwork=${artworkId}`)
       const payload = res?.data
       const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
       const upcoming = list.find(a => a?.status === 'upcoming')
@@ -192,7 +192,7 @@ export default function AdminArtworkReview(){
       const auctionId = await findAuctionIdForArtwork(data.id)
       if (auctionId) {
         try {
-          await api.delete(`/api/v1/auctions/${auctionId}/delete/`)
+          await api.delete(`/auctions/${auctionId}/delete/`)
           console.log('[AdminArtworkReview] Subasta eliminada (id=', auctionId, ')')
         } catch (e) {
           console.warn('[AdminArtworkReview] No se pudo eliminar la subasta:', e?.response?.status, e?.message)
@@ -202,7 +202,7 @@ export default function AdminArtworkReview(){
       }
 
       // 2) volver la obra a Pending
-      await api.patch(`/api/v1/artworks/${data.id}/`, { status: 'Pending' })
+      await api.patch(`/artworks/${data.id}/`, { status: 'Pending' })
 
       setSuccessMsg('La obra volvió a estado pendiente. (Si existía subasta, fue eliminada).')
       setSuccessOpen(true)

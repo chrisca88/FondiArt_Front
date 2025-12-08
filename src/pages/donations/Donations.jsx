@@ -33,7 +33,7 @@ export default function Donations(){
     setError('')
     setItems([])
 
-    const path = '/artists/' // baseURL ya incluye /api/v1
+    const path = '/artists/'
     if (import.meta.env.DEV) {
       console.log('[DONATIONS] GET', (authService.client.defaults.baseURL || '') + path)
     }

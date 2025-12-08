@@ -13,7 +13,7 @@ export default function ArtworkStats(){
     setLoading(true)
     setErr(null)
 
-    api.get(`/api/v1/artworks/${id}/stats/`)
+    api.get(`/artworks/${id}/stats/`)
       .then(res => {
         if(!alive) return
         setData(res?.data)

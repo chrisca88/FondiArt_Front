@@ -22,7 +22,7 @@ export default function AdminDashboard(){
         const params = new URLSearchParams()
         if (q) params.set('q', q)
 
-        const url = `/api/v1/artworks/?${params.toString()}`
+        const url = `/artworks/?${params.toString()}`
         // 🔎 Logs de depuración del request
         console.log('[AdminDashboard] Fetching artworks...', {
           url,
