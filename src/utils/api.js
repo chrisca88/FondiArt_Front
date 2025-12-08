@@ -1,14 +1,15 @@
+// src/utils/api.js
 import axios from 'axios'
 import API_URL from '../config'
 
 const api = axios.create({
-  baseURL: API_URL,        // <-- ahora usa la misma base que authService
+  baseURL: `${API_URL.replace(/\/+$/, '')}/api/v1`,
   headers: { 'Content-Type': 'application/json' }
 })
 
-api.interceptors.request.use((config)=>{
+api.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
-  if(token){
+  if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
