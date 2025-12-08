@@ -86,7 +86,7 @@ export default function Wallet(){
       return
     }
 
-    authService.client.get(`finance/cuenta/`)
+    authService.client.get(`/finance/cuenta/`)
       .then(res=>{
         if(!alive) return
         setCashARS(res.data?.balance || 0)
