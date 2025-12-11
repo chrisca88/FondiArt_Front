@@ -14,7 +14,7 @@ export default function ForgotPassword(){
     setLoading(true)
 
     try {
-      await api.post('api/v1/auth/password-reset/', { email })
+      await api.post('/auth/password-reset/', { email })
 
       setDone(true)
     } catch (err){
