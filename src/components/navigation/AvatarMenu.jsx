@@ -83,6 +83,9 @@ export default function AvatarMenu({ user }) {
                 <Link className="block px-4 py-2 hover:bg-slate-50" to="/donaciones" onClick={()=>setOpen(false)}>
                   Donaciones
                 </Link>
+                <Link className="block px-4 py-2 hover:bg-slate-50" to="/subastas/proximas" onClick={()=>setOpen(false)}>
+                  Próximas subastas
+                </Link>
               </>
             )}
 

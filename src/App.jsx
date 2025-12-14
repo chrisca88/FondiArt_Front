@@ -21,6 +21,9 @@ import Profile from './pages/account/Profile.jsx'
 import MyWorks from './pages/dashboard/MyWorks.jsx'
 import ArtworkStats from './pages/artworks/ArtworkStats.jsx'
 
+import UpcomingAuctions from './pages/auctions/UpcomingAuctions.jsx'
+
+
 // Admin
 import AdminDashboard from './pages/admin/AdminDashboard.jsx'
 import AdminArtworkReview from './pages/admin/AdminArtworkReview.jsx'
@@ -67,6 +70,9 @@ export default function App(){
           <Route path="/cuenta" element={<Profile/>} />
           <Route path="/mercado" element={<SecondaryMarket/>} />
           <Route path="/cuenta/cambiar-password" element={<ChangePassword />} />
+          <Route path="/subastas/proximas" element={<UpcomingAuctions/>} />
+
+          
 
           {/* Wallet (todos los roles) */}
           <Route path="/wallet" element={<Wallet/>} />
