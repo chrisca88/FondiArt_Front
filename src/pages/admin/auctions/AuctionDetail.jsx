@@ -52,7 +52,7 @@ export default function AuctionDetail(){
     setUsersErr('')
     try{
       // Intento server-side search
-      const withSearch = `/api/v1/users/?search=${encodeURIComponent(term)}`
+      const withSearch = `users/?search=${encodeURIComponent(term)}`
       console.log('[AuctionDetail][USERS][GET]', withSearch)
       let res = await api.get(withSearch)
       let payload = res?.data
@@ -60,7 +60,7 @@ export default function AuctionDetail(){
 
       // Si el back no filtra, traigo todo y filtro local
       if (!Array.isArray(list) || list.length === 0){
-        const fallbackUrl = '/api/v1/users/'
+        const fallbackUrl = 'users/'
         console.log('[AuctionDetail][USERS][FALLBACK] GET', fallbackUrl)
         res = await api.get(fallbackUrl)
         payload = res?.data
@@ -128,7 +128,7 @@ export default function AuctionDetail(){
 
   // --- función reutilizable para obtener el detalle ---
   async function fetchDetail(aliveRef = { current: true }) {
-    const endpoint = `/api/v1/auctions/${id}/`
+    const endpoint = `auctions/${id}/`
     const base = api?.defaults?.baseURL
     const auth = api?.defaults?.headers?.Authorization || api?.defaults?.headers?.common?.Authorization
     console.log('[AuctionDetail][FETCH-DETAIL] GET', { endpoint, baseURL: base, hasAuth: !!auth, id })
@@ -184,7 +184,7 @@ export default function AuctionDetail(){
       if (!buyerId) return
       try{
         console.log('[AuctionDetail][WINNER][LOOKUP] GET /api/v1/users/')
-        const res = await api.get('/api/v1/users/')
+        const res = await api.get('users/')
         const list = Array.isArray(res?.data?.results) ? res.data.results : (Array.isArray(res?.data) ? res.data : [])
         const found = list.find(u => Number(u.id) === Number(buyerId))
         if (found) {
@@ -201,7 +201,7 @@ export default function AuctionDetail(){
   // --- FETCH de LISTADO (solo para LOGS de filtros) ---
   useEffect(()=> {
     let alive = true
-    const listEndpoint = '/api/v1/auctions/'
+    const listEndpoint = 'auctions/'
     console.log('[AuctionDetail][FETCH-LIST] GET', listEndpoint)
 
     api.get(listEndpoint)
@@ -317,7 +317,7 @@ export default function AuctionDetail(){
     console.log('[AuctionDetail][PATCH] /api/v1/auctions/%s/ body=', id, { auction_date: isoZ })
 
     try{
-      const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, { auction_date: isoZ })
+      const { data: updatedPartial } = await api.patch(`auctions/${id}/`, { auction_date: isoZ })
       console.log('[AuctionDetail][PATCH][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
       setAuctionLocal(toLocalInputValue((updatedPartial && updatedPartial.auction_date) || (data && data.auction_date)))
@@ -378,7 +378,7 @@ export default function AuctionDetail(){
       }
       console.log('[AuctionDetail][CHECK-FUNDS][POST] /api/v1/finance/check-funds/', checkBody)
 
-      const checkRes = await api.post('/api/v1/finance/check-funds/', checkBody)
+      const checkRes = await api.post('finance/check-funds/', checkBody)
 
       const hasFunds = (typeof checkRes?.data === 'object')
         ? !!checkRes?.data?.has_sufficient_funds
@@ -397,7 +397,7 @@ export default function AuctionDetail(){
       }
       console.log('[AuctionDetail][TRANSFER][POST] /api/v1/finance/transfer-to-admin/', transferBody)
 
-      const transferRes = await api.post('/api/v1/finance/transfer-to-admin/', transferBody)
+      const transferRes = await api.post('finance/transfer-to-admin/', transferBody)
       console.log('[AuctionDetail][TRANSFER][OK]', transferRes?.data)
 
       // 3. Liquidar la obra entre los dueños
@@ -407,7 +407,7 @@ export default function AuctionDetail(){
       }
       console.log('[AuctionDetail][LIQUIDATE][POST] /api/v1/finance/liquidate-artwork/', liquidateBody)
 
-      const liquidateRes = await api.post('/api/v1/finance/liquidate-artwork/', liquidateBody)
+      const liquidateRes = await api.post('finance/liquidate-artwork/', liquidateBody)
       console.log('[AuctionDetail][LIQUIDATE][OK]', liquidateRes?.data)
 
       // 4. Marcar la subasta como finalizada
@@ -418,7 +418,7 @@ export default function AuctionDetail(){
       }
       console.log('[AuctionDetail][CLOSE-AUCTION][PATCH] /api/v1/auctions/%s/ body=', id, payload)
 
-      const { data: updatedPartial } = await api.patch(`/api/v1/auctions/${id}/`, payload)
+      const { data: updatedPartial } = await api.patch(`auctions/${id}/`, payload)
       console.log('[AuctionDetail][CLOSE-AUCTION][OK] partial keys=', updatedPartial ? Object.keys(updatedPartial) : '(null)')
 
       setData(prev => ({ ...(prev || {}), ...(updatedPartial || {}) }))
