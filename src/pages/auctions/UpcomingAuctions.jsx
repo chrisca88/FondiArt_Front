@@ -30,57 +30,31 @@ const formatDateTime = (value) => {
   });
 };
 
-// Intenta obtener fecha de inicio desde distintos nombres comunes
-const getStartDate = (auction) =>
-  auction?.start_time ??
-  auction?.startTime ??
-  auction?.starts_at ??
-  auction?.startsAt ??
-  auction?.start_date ??
-  auction?.startDate ??
-  auction?.start_datetime ??
-  auction?.startDateTime ??
-  null;
+const formatMoney = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return `$${n.toLocaleString("es-AR")}`;
+};
 
-// Intenta obtener artwork desde distintos nombres comunes
-const getArtwork = (auction) =>
-  auction?.artwork ?? auction?.artwork_detail ?? auction?.artworkDetail ?? auction?.obra ?? null;
+// Basado en AuctionSerializer
+const getAuctionDate = (a) => a?.auction_date ?? a?.auctionDate ?? a?.date ?? null;
+const getArtworkId = (a) => a?.artwork ?? a?.artwork_id ?? a?.artworkId ?? null;
+const getTitle = (a) => a?.artwork_title ?? a?.title ?? "Obra";
+const getArtistName = (a) => a?.artist_name ?? a?.artist?.name ?? "—";
+const getImage = (a) => a?.artwork_image ?? a?.image ?? "";
+const getStartPrice = (a) => a?.start_price ?? a?.startPrice ?? a?.start_price_amount ?? null;
+const getFinalPrice = (a) => a?.final_price ?? a?.finalPrice ?? null;
 
-// Intenta obtener un id de artwork (para el link)
-const getArtworkId = (auction, artwork) =>
-  artwork?.id ??
-  artwork?._id ??
-  auction?.artwork_id ??
-  auction?.artworkId ??
-  auction?.obra_id ??
-  auction?.obraId ??
-  null;
-
-// Imagen: intenta varias propiedades comunes
-const getArtworkImage = (artwork) =>
-  artwork?.image_url ??
-  artwork?.imageUrl ??
-  artwork?.image ??
-  artwork?.thumbnail_url ??
-  artwork?.thumbnailUrl ??
-  "";
-
-// Título / artista
-const getArtworkTitle = (artwork) => artwork?.title ?? artwork?.titulo ?? "Obra";
-const getArtworkArtist = (artwork) => artwork?.artist ?? artwork?.artist_name ?? artwork?.artistName ?? artwork?.autor ?? "—";
-
-// Precio base (si existiera)
-const getStartingPrice = (auction) =>
-  auction?.starting_price ??
-  auction?.startingPrice ??
-  auction?.base_price ??
-  auction?.basePrice ??
-  null;
+const normalizeStatus = (a) => (a?.status || "").toString().toLowerCase();
 
 export default function UpcomingAuctions() {
   const [loading, setLoading] = useState(true);
   const [auctions, setAuctions] = useState([]);
   const [error, setError] = useState("");
+
+  // "upcoming" | "finished"
+  const [view, setView] = useState("upcoming");
 
   useEffect(() => {
     let mounted = true;
@@ -90,14 +64,16 @@ export default function UpcomingAuctions() {
         setLoading(true);
         setError("");
 
-        const res = await api.get("auctions/");
+        // Si api.baseURL ya incluye /api/v1 -> /auctions/ está OK
+        // Si NO incluye /api/v1 -> cambiar a '/api/v1/auctions/'
+        const res = await api.get("/auctions/");
         const list = normalizeList(res.data);
 
         if (!mounted) return;
         setAuctions(list);
       } catch (e) {
         if (!mounted) return;
-        setError("No se pudieron cargar las próximas subastas. Intentá nuevamente.");
+        setError("No se pudieron cargar las subastas. Intentá nuevamente.");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -109,34 +85,74 @@ export default function UpcomingAuctions() {
     };
   }, []);
 
-  const upcoming = useMemo(() => {
+  const filtered = useMemo(() => {
     const now = new Date();
 
-    return auctions
-      .map((a) => {
-        const start = safeDate(getStartDate(a));
-        return { ...a, __start: start };
+    const mapped = auctions.map((a) => {
+      const d = safeDate(getAuctionDate(a));
+      return { ...a, __date: d };
+    });
+
+    if (view === "finished") {
+      return mapped
+        .filter((a) => {
+          const st = normalizeStatus(a);
+          // finished explícito o (fecha pasada + algún indicio de cierre)
+          if (st === "finished") return true;
+          if (a.__date && a.__date <= now && (a.buyer !== null || getFinalPrice(a) !== null)) return true;
+          return false;
+        })
+        .sort((a, b) => (b.__date?.getTime?.() || 0) - (a.__date?.getTime?.() || 0));
+    }
+
+    // upcoming (por defecto)
+    return mapped
+      .filter((a) => {
+        const st = normalizeStatus(a);
+        // upcoming explícito o fecha futura
+        if (st === "upcoming") return true;
+        if (a.__date && a.__date > now) return true;
+        return false;
       })
-      .filter((a) => a.__start && a.__start > now)
-      .sort((a, b) => a.__start - b.__start);
-  }, [auctions]);
+      .sort((a, b) => (a.__date?.getTime?.() || 0) - (b.__date?.getTime?.() || 0));
+  }, [auctions, view]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Próximas subastas</h1>
+          <h1 className="text-2xl font-bold">
+            {view === "finished" ? "Subastas finalizadas" : "Próximas subastas"}
+          </h1>
           <p className="text-sm text-slate-600">
-            Obras que comenzarán a subastarse próximamente.
+            {view === "finished"
+              ? "Historial de subastas que ya finalizaron."
+              : "Obras que comenzarán a subastarse próximamente."}
           </p>
         </div>
 
-        <Link
-          to="/market"
-          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50"
-        >
-          Volver al marketplace
-        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {/* Filtro */}
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <Tab
+              label="Próximas"
+              active={view === "upcoming"}
+              onClick={() => setView("upcoming")}
+            />
+            <Tab
+              label="Finalizadas"
+              active={view === "finished"}
+              onClick={() => setView("finished")}
+            />
+          </div>
+
+          <Link
+            to="/market"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50"
+          >
+            Volver al marketplace
+          </Link>
+        </div>
       </div>
 
       {loading && (
@@ -151,26 +167,29 @@ export default function UpcomingAuctions() {
         </div>
       )}
 
-      {!loading && !error && upcoming.length === 0 && (
+      {!loading && !error && filtered.length === 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">
-          No hay subastas próximas por el momento.
+          {view === "finished"
+            ? "No hay subastas finalizadas por el momento."
+            : "No hay subastas próximas por el momento."}
         </div>
       )}
 
-      {!loading && !error && upcoming.length > 0 && (
+      {!loading && !error && filtered.length > 0 && (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {upcoming.map((auction) => {
-            const artwork = getArtwork(auction);
-            const artworkId = getArtworkId(auction, artwork);
-            const img = getArtworkImage(artwork);
-            const title = getArtworkTitle(artwork);
-            const artist = getArtworkArtist(artwork);
-            const startLabel = formatDateTime(auction.__start);
-            const startingPrice = getStartingPrice(auction);
+          {filtered.map((a) => {
+            const artworkId = getArtworkId(a);
+            const img = getImage(a);
+            const title = getTitle(a);
+            const artist = getArtistName(a);
+            const dateLabel = formatDateTime(a.__date);
+            const startPrice = getStartPrice(a);
+            const finalPrice = getFinalPrice(a);
+            const st = normalizeStatus(a);
 
             return (
               <div
-                key={auction.id ?? auction._id ?? `${title}-${startLabel}`}
+                key={a.id ?? `${title}-${dateLabel}`}
                 className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
               >
                 <div className="aspect-[4/3] w-full bg-slate-100">
@@ -191,23 +210,26 @@ export default function UpcomingAuctions() {
                 <div className="p-5">
                   <div className="mb-2">
                     <h2 className="line-clamp-1 text-lg font-bold">{title}</h2>
-                    <p className="text-sm text-slate-600 line-clamp-1">
-                      {artist}
-                    </p>
+                    <p className="text-sm text-slate-600 line-clamp-1">{artist}</p>
                   </div>
 
-                  <div className="mb-4 rounded-xl bg-slate-50 p-3 text-sm">
+                  <div className="mb-4 rounded-xl bg-slate-50 p-3 text-sm space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-600">Comienza</span>
-                      <span className="font-semibold">{startLabel}</span>
+                      <span className="text-slate-600">
+                        {view === "finished" ? "Finalizó" : "Fecha"}
+                      </span>
+                      <span className="font-semibold">{dateLabel}</span>
                     </div>
 
-                    {startingPrice !== null && startingPrice !== undefined && (
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <span className="text-slate-600">Precio base</span>
-                        <span className="font-semibold">
-                          ${Number(startingPrice).toLocaleString("es-AR")}
-                        </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-600">Precio inicial</span>
+                      <span className="font-semibold">{formatMoney(startPrice)}</span>
+                    </div>
+
+                    {view === "finished" && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-600">Precio final</span>
+                        <span className="font-semibold">{formatMoney(finalPrice)}</span>
                       </div>
                     )}
                   </div>
@@ -230,8 +252,13 @@ export default function UpcomingAuctions() {
                       </button>
                     )}
 
-                    <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                      Próxima
+                    <span
+                      className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold ${
+                        view === "finished" ? "text-slate-700" : "text-slate-700"
+                      }`}
+                      title={`Estado: ${st || "—"}`}
+                    >
+                      {view === "finished" ? "Finalizada" : "Próxima"}
                     </span>
                   </div>
                 </div>
@@ -241,5 +268,19 @@ export default function UpcomingAuctions() {
         </div>
       )}
     </div>
+  );
+}
+
+function Tab({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm ${
+        active ? "bg-indigo-600 text-white" : "hover:bg-slate-50"
+      }`}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
