@@ -90,7 +90,7 @@ export default function UpcomingAuctions() {
         setLoading(true);
         setError("");
 
-        const res = await api.get("/auctions/");
+        const res = await api.get("auctions/");
         const list = normalizeList(res.data);
 
         if (!mounted) return;
