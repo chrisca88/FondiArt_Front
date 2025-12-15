@@ -233,7 +233,7 @@ export default function UpcomingAuctions() {
                 </p>
 
                 <Link
-                  to={`/artworks/${getArtworkId(a)}`}
+                  to={`/obra/${getArtworkId(a)}`}
                   className="mt-3 inline-block text-sm font-semibold text-indigo-600"
                 >
                   Ver obra
