@@ -162,6 +162,81 @@ export default function ArtworkDetail(){
 
   useEffect(()=>{ setQty(1); setBuyErr(''); setBuyOk(false) }, [buyOpen])
 
+  // ✅ Normalizador único del detalle (para load y refresh post-compra)
+  const mapArtwork = (raw) => {
+    const isDirect = detectDirect(raw)
+
+    // soportamos image/gallery en ambos formatos
+    const rawImage = coalesce(raw, ['image'])
+    const rawGallery = coalesce(raw, ['gallery'])
+    const gallery = Array.isArray(rawGallery) && rawGallery.length
+      ? rawGallery.map(fixImageUrl)
+      : [fixImageUrl(rawImage)].filter(Boolean)
+
+    // ----- ARTISTA: string u objeto -----
+    let artistName = ''
+    const artistVal = coalesce(raw, ['artist', 'artist_name', 'artistName', 'author', 'author_name'])
+    if (typeof artistVal === 'string') {
+      artistName = artistVal
+    } else if (artistVal && typeof artistVal === 'object') {
+      artistName =
+        artistVal.name ||
+        [artistVal.first_name || artistVal.firstName, artistVal.last_name || artistVal.lastName]
+          .filter(Boolean).join(' ') ||
+        artistVal.username ||
+        artistVal.alias ||
+        ''
+    } else {
+      artistName = ''
+    }
+    artistName = String(artistName).trim()
+
+    return {
+      id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
+      title: coalesce(raw, ['title', 'titulo']) ?? '',
+      artist: artistName,
+      image: fixImageUrl(rawImage),
+      gallery,
+      description: coalesce(raw, ['description', 'descripcion']) ?? '',
+      tags: Array.isArray(raw.tags) ? raw.tags : (raw.tags ? [String(raw.tags)] : []),
+      price: toNum(coalesce(raw, ['price', 'precio']), 0),
+
+      // soportar fraction_from / fractionFrom
+      fractionFrom: toNum(coalesce(raw, ['fractionFrom', 'fraction_from']), 0),
+
+      // soportar fractions_total / fractionsTotal
+      fractionsTotal: isDirect ? 1 : toNum(coalesce(raw, ['fractionsTotal', 'fractions_total']), 0),
+
+      // ✅ soportar fractions_left / fractionsLeft (si no viene, fallback a total)
+      fractionsLeft: isDirect
+        ? 1
+        : (() => {
+            const left = coalesce(raw, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+            if (left !== undefined) return toNum(left, 0)
+            const tot = coalesce(raw, ['fractionsTotal', 'fractions_total'])
+            return toNum(tot, 0)
+          })(),
+
+      createdAt: coalesce(raw, ['createdAt', 'created_at', 'created']),
+      status: String(coalesce(raw, ['status']) || '').toLowerCase(),
+      estado_venta: String(coalesce(raw, ['estado_venta', 'estadoVenta']) || '').toLowerCase(),
+      directSale: isDirect,
+    }
+  }
+
+  // ✅ Refresco real del detalle (para que % vendido + disponibles se actualicen siempre)
+  const refreshArtwork = async () => {
+    const { data: fresh } = await authService.client.get(`/artworks/${id}/`)
+    const next = mapArtwork(fresh)
+    setData(next)
+
+    // si el modal está abierto y qty quedó mayor a disponibles, ajustar
+    if (!next.directSale) {
+      setQty(q => Math.min(Math.max(1, Number(q || 1)), Math.max(1, Number(next.fractionsLeft || 1))))
+    }
+    return next
+  }
+
   // cargar detalle + rating
   useEffect(()=>{
     let alive = true
@@ -174,60 +249,7 @@ export default function ArtworkDetail(){
         const { data: raw } = await authService.client.get(`/artworks/${id}/`)
         if (!alive) return
 
-        const isDirect = detectDirect(raw)
-
-        // soportamos image/gallery en ambos formatos
-        const rawImage = coalesce(raw, ['image'])
-        const rawGallery = coalesce(raw, ['gallery'])
-        const gallery = Array.isArray(rawGallery) && rawGallery.length
-          ? rawGallery.map(fixImageUrl)
-          : [fixImageUrl(rawImage)].filter(Boolean)
-
-        // ----- ARTISTA: string u objeto -----
-        let artistName = ''
-        const artistVal = coalesce(raw, ['artist', 'artist_name', 'artistName', 'author', 'author_name'])
-        if (typeof artistVal === 'string') {
-          artistName = artistVal
-        } else if (artistVal && typeof artistVal === 'object') {
-          artistName =
-            artistVal.name ||
-            [artistVal.first_name || artistVal.firstName, artistVal.last_name || artistVal.lastName]
-              .filter(Boolean).join(' ') ||
-            artistVal.username ||
-            artistVal.alias ||
-            ''
-        } else {
-          artistName = ''
-        }
-        artistName = String(artistName).trim()
-
-        const mapped = {
-          id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
-          title: coalesce(raw, ['title', 'titulo']) ?? '',
-          artist: artistName,
-          image: fixImageUrl(rawImage),
-          gallery,
-          description: coalesce(raw, ['description', 'descripcion']) ?? '',
-          tags: Array.isArray(raw.tags) ? raw.tags : (raw.tags ? [String(raw.tags)] : []),
-          price: toNum(coalesce(raw, ['price', 'precio']), 0),
-          // soportar fraction_from / fractionFrom
-          fractionFrom: toNum(coalesce(raw, ['fractionFrom', 'fraction_from']), 0),
-          // soportar fractions_total / fractionsTotal
-          fractionsTotal: isDirect ? 1 : toNum(coalesce(raw, ['fractionsTotal', 'fractions_total']), 0),
-          // soportar fractions_left / fractionsLeft (fallback a total si viene undefined)
-          fractionsLeft: isDirect
-            ? 1
-            : (() => {
-                const left = coalesce(raw, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
-                if (left !== undefined) return toNum(left, 0)
-                const tot = coalesce(raw, ['fractionsTotal', 'fractions_total'])
-                return toNum(tot, 0)
-              })(),
-          createdAt: coalesce(raw, ['createdAt', 'created_at', 'created']),
-          status: String(coalesce(raw, ['status']) || '').toLowerCase(),
-          estado_venta: String(coalesce(raw, ['estado_venta', 'estadoVenta']) || '').toLowerCase(),
-          directSale: isDirect,
-        }
+        const mapped = mapArtwork(raw)
         setData(mapped)
 
         // 2) Rating (endpoint dedicado)
@@ -251,7 +273,7 @@ export default function ArtworkDetail(){
 
     fetchAll()
     return ()=>{ alive = false }
-  }, [id, user?.id])
+  }, [id, user?.id]) // ok: si cambia usuario, recalculo my rating
 
   const isDirect = !!data?.directSale
   const isAuctioned = data?.status === 'auctioned'
@@ -359,30 +381,8 @@ export default function ArtworkDetail(){
         const payload = { artwork_id: data.id, quantity: desired }
         await authService.client.post('/finance/tokens/buy/', payload)
 
-        // Actualizamos localmente y/o refrescamos
-        try {
-          const { data: fresh2 } = await authService.client.get(`/artworks/${data.id}/`)
-          const nextLeft = (() => {
-            const l = coalesce(fresh2, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
-            if (l !== undefined) return toNum(l, 0)
-            const t = coalesce(fresh2, ['fractionsTotal', 'fractions_total'])
-            return Math.max(0, toNum(t, 0) - desired)
-          })()
-          setData(prev => ({
-            ...prev,
-            fractionsLeft: nextLeft,
-            fractionsTotal: toNum(coalesce(fresh2, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? frTotal),
-            status: String(coalesce(fresh2, ['status']) || prev?.status || '').toLowerCase(),
-            estado_venta: String(coalesce(fresh2, ['estado_venta', 'estadoVenta']) || prev?.estado_venta || '').toLowerCase(),
-          }))
-        } catch {
-          setData(prev => {
-            const left = Math.max(0, toNum(prev?.fractionsLeft, 0) - desired)
-            const next = { ...prev, fractionsLeft: left }
-            if (left === 0) next.estado_venta = 'vendida'
-            return next
-          })
-        }
+        // ✅ CLAVE: refresco real para actualizar porcentajes + disponibles
+        await refreshArtwork()
 
         setBuyOk(true)
       } else {
@@ -400,15 +400,19 @@ export default function ArtworkDetail(){
           throw new Error('La obra ya está vendida.')
         }
 
-        setData(prev => ({
-          ...prev,
-          status: String(coalesce(body, ['status']) || prev?.status || '').toLowerCase(),
-          estado_venta: String(coalesce(body, ['estado_venta', 'estadoVenta']) || 'vendida').toLowerCase(),
-          fractionsLeft: toNum(coalesce(body, ['fractionsLeft', 'fractions_left']), 0),
-          fractionsTotal: toNum(coalesce(body, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? 1),
-          price: toNum(coalesce(body, ['price', 'precio']), prev?.price ?? 0),
-          fractionFrom: toNum(coalesce(body, ['fractionFrom', 'fraction_from']), prev?.fractionFrom ?? 0),
-        }))
+        // también refrescamos para mantener consistencia
+        try {
+          await refreshArtwork()
+        } catch {
+          // fallback mínimo si refresh falla
+          setData(prev => ({
+            ...prev,
+            estado_venta: 'vendida',
+            status: String(coalesce(body, ['status']) || prev?.status || '').toLowerCase(),
+            fractionsLeft: toNum(coalesce(body, ['fractionsLeft', 'fractions_left']), 0),
+            fractionsTotal: toNum(coalesce(body, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? 1),
+          }))
+        }
 
         setBuyOk(true)
       }
@@ -593,6 +597,7 @@ export default function ArtworkDetail(){
                     ) : (
                       <>
                         <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
+                        {/* ✅ ahora se actualiza siempre porque data se refresca post-compra */}
                         <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
                       </>
                     )}
