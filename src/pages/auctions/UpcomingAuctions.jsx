@@ -37,12 +37,56 @@ const formatMoney = (value) => {
   return `$${n.toLocaleString("es-AR")}`;
 };
 
+// ✅ origin del backend (sin /api/v1)
+const getApiOrigin = () => {
+  try {
+    const base = api?.defaults?.baseURL;
+    if (!base) return "";
+    return new URL(base).origin; // ej: https://api.fondiart.com.ar
+  } catch {
+    return "";
+  }
+};
+
+// ✅ arregla URLs encodeadas / relativas
+const fixImageUrl = (url) => {
+  if (typeof url !== "string") return "";
+  let u = url.trim();
+  if (!u) return "";
+
+  // Caso: URL encodeada tipo "...https%3A/...."
+  const marker = "https%3A/";
+  const idx = u.indexOf(marker);
+  if (idx !== -1) {
+    u = "https://" + u.substring(idx + marker.length);
+    return u;
+  }
+
+  // Caso: "//res.cloudinary.com/..."
+  if (u.startsWith("//")) return "https:" + u;
+
+  // Caso: "/media/..." o "/uploads/..." (ruta relativa)
+  if (u.startsWith("/")) {
+    const origin = getApiOrigin();
+    return origin ? `${origin}${u}` : u;
+  }
+
+  // Caso: "media/..." sin slash inicial
+  if (!u.startsWith("http")) {
+    const origin = getApiOrigin();
+    return origin ? `${origin}/${u}` : u;
+  }
+
+  // Caso: ya es URL completa
+  return u;
+};
+
 // Basado en AuctionSerializer
 const getAuctionDate = (a) => a?.auction_date ?? a?.auctionDate ?? a?.date ?? null;
 const getArtworkId = (a) => a?.artwork ?? a?.artwork_id ?? a?.artworkId ?? null;
 const getTitle = (a) => a?.artwork_title ?? a?.title ?? "Obra";
 const getArtistName = (a) => a?.artist_name ?? a?.artist?.name ?? "—";
-const getImage = (a) => a?.artwork_image ?? a?.image ?? "";
+const getRawImage = (a) => a?.artwork_image ?? a?.image ?? "";
 const getStartPrice = (a) => a?.start_price ?? a?.startPrice ?? a?.start_price_amount ?? null;
 const getFinalPrice = (a) => a?.final_price ?? a?.finalPrice ?? null;
 
@@ -97,7 +141,6 @@ export default function UpcomingAuctions() {
       return mapped
         .filter((a) => {
           const st = normalizeStatus(a);
-          // finished explícito o (fecha pasada + algún indicio de cierre)
           if (st === "finished") return true;
           if (a.__date && a.__date <= now && (a.buyer !== null || getFinalPrice(a) !== null)) return true;
           return false;
@@ -105,11 +148,9 @@ export default function UpcomingAuctions() {
         .sort((a, b) => (b.__date?.getTime?.() || 0) - (a.__date?.getTime?.() || 0));
     }
 
-    // upcoming (por defecto)
     return mapped
       .filter((a) => {
         const st = normalizeStatus(a);
-        // upcoming explícito o fecha futura
         if (st === "upcoming") return true;
         if (a.__date && a.__date > now) return true;
         return false;
@@ -132,18 +173,9 @@ export default function UpcomingAuctions() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {/* Filtro */}
           <div className="inline-flex rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <Tab
-              label="Próximas"
-              active={view === "upcoming"}
-              onClick={() => setView("upcoming")}
-            />
-            <Tab
-              label="Finalizadas"
-              active={view === "finished"}
-              onClick={() => setView("finished")}
-            />
+            <Tab label="Próximas" active={view === "upcoming"} onClick={() => setView("upcoming")} />
+            <Tab label="Finalizadas" active={view === "finished"} onClick={() => setView("finished")} />
           </div>
 
           <Link
@@ -179,7 +211,7 @@ export default function UpcomingAuctions() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((a) => {
             const artworkId = getArtworkId(a);
-            const img = getImage(a);
+            const img = fixImageUrl(getRawImage(a)); // ✅ FIX APLICADO
             const title = getTitle(a);
             const artist = getArtistName(a);
             const dateLabel = formatDateTime(a.__date);
@@ -199,6 +231,15 @@ export default function UpcomingAuctions() {
                       alt={title}
                       className="h-full w-full object-cover"
                       loading="lazy"
+                      onError={(e) => {
+                        // fallback visual si la URL está rota
+                        e.currentTarget.style.display = "none";
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.innerHTML =
+                            '<div class="flex h-full w-full items-center justify-center text-slate-400">Sin imagen</div>';
+                        }
+                      }}
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -215,9 +256,7 @@ export default function UpcomingAuctions() {
 
                   <div className="mb-4 rounded-xl bg-slate-50 p-3 text-sm space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-600">
-                        {view === "finished" ? "Finalizó" : "Fecha"}
-                      </span>
+                      <span className="text-slate-600">{view === "finished" ? "Finalizó" : "Fecha"}</span>
                       <span className="font-semibold">{dateLabel}</span>
                     </div>
 
@@ -253,9 +292,7 @@ export default function UpcomingAuctions() {
                     )}
 
                     <span
-                      className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold ${
-                        view === "finished" ? "text-slate-700" : "text-slate-700"
-                      }`}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
                       title={`Estado: ${st || "—"}`}
                     >
                       {view === "finished" ? "Finalizada" : "Próxima"}
@@ -275,9 +312,7 @@ function Tab({ label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 text-sm ${
-        active ? "bg-indigo-600 text-white" : "hover:bg-slate-50"
-      }`}
+      className={`px-4 py-2 text-sm ${active ? "bg-indigo-600 text-white" : "hover:bg-slate-50"}`}
       type="button"
     >
       {label}
