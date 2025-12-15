@@ -224,18 +224,53 @@ export default function ArtworkDetail(){
     }
   }
 
+    const logFractions = (label, raw) => {
+    try {
+      console.log(`[ArtworkDetail] ${label} - RAW:`, raw)
+
+      const snapshot = {
+        id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
+        status: coalesce(raw, ['status']),
+        estado_venta: coalesce(raw, ['estado_venta', 'estadoVenta']),
+
+        // posibles nombres para fracciones
+        fractionsLeft: coalesce(raw, ['fractionsLeft']),
+        fractions_left: coalesce(raw, ['fractions_left']),
+        availableFractions: coalesce(raw, ['availableFractions']),
+        available_fractions: coalesce(raw, ['available_fractions']),
+
+        fractionsTotal: coalesce(raw, ['fractionsTotal']),
+        fractions_total: coalesce(raw, ['fractions_total']),
+
+        fractionFrom: coalesce(raw, ['fractionFrom', 'fraction_from']),
+        venta_directa: coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']),
+      }
+
+      console.table(snapshot)
+    } catch (e) {
+      console.log(`[ArtworkDetail] ${label} - RAW (fallback):`, raw)
+    }
+  }
+
+
   // ✅ Refresco real del detalle (para que % vendido + disponibles se actualicen siempre)
-  const refreshArtwork = async () => {
+    const refreshArtwork = async () => {
     const { data: fresh } = await authService.client.get(`/artworks/${id}/`)
+
+    // 🔎 LOG: lo que devuelve el backend luego de la compra
+    logFractions('REFRESH after buy', fresh)
+
     const next = mapArtwork(fresh)
+    console.log('[ArtworkDetail] MAPPED after buy:', next)
+
     setData(next)
 
-    // si el modal está abierto y qty quedó mayor a disponibles, ajustar
     if (!next.directSale) {
       setQty(q => Math.min(Math.max(1, Number(q || 1)), Math.max(1, Number(next.fractionsLeft || 1))))
     }
     return next
   }
+
 
   // cargar detalle + rating
   useEffect(()=>{
@@ -351,6 +386,9 @@ export default function ArtworkDetail(){
     try {
       // refresco rápido del estado por si cambió algo en back (solo GET)
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
+            // 🔎 LOG: estado del backend antes de comprar
+      logFractions('PRE buy check', fresh)
+
       const directFresh = detectDirect(fresh)
       const estadoFresh = String(coalesce(fresh, ['estado_venta', 'estadoVenta']) || '').toLowerCase()
 
