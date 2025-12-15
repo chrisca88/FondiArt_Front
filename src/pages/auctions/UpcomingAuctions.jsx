@@ -45,6 +45,7 @@ const getApiOrigin = () => {
   }
 };
 
+// FIX: Corregir URL si falta el doble slash después de https:
 const fixImageUrl = (url) => {
   console.log("[UpcomingAuctions] raw artwork_image:", url);
 
@@ -53,6 +54,13 @@ const fixImageUrl = (url) => {
   let u = url.trim();
   if (!u) return "";
 
+  // ✅ Verifica si hay un error con los slashes
+  if (u.startsWith("https:/")) {
+    u = "https://" + u.slice(6); // Corrige "https:/..." a "https://..."
+    console.log("[UpcomingAuctions] Fixed image url (missing slash):", u);
+  }
+
+  // Caso: URL encodeada tipo "...https%3A/...."
   const marker = "https%3A/";
   const idx = u.indexOf(marker);
   if (idx !== -1) {
@@ -61,12 +69,14 @@ const fixImageUrl = (url) => {
     return fixed;
   }
 
+  // Caso: "//res.cloudinary.com/..."
   if (u.startsWith("//")) {
     const fixed = "https:" + u;
     console.log("[UpcomingAuctions] protocol-relative url:", fixed);
     return fixed;
   }
 
+  // Caso: "/media/..." o "/uploads/..." (ruta relativa)
   if (u.startsWith("/")) {
     const fixed = `${getApiOrigin()}${u}`;
     console.log("[UpcomingAuctions] relative url fixed:", fixed);
@@ -114,7 +124,6 @@ export default function UpcomingAuctions() {
 
         const list = normalizeList(res.data);
         if (!mounted) return;
-
         setAuctions(list);
       } catch (e) {
         console.error("[UpcomingAuctions] API ERROR:", e);
@@ -146,7 +155,7 @@ export default function UpcomingAuctions() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">
             {view === "finished" ? "Subastas finalizadas" : "Próximas subastas"}
@@ -235,5 +244,17 @@ export default function UpcomingAuctions() {
         })}
       </div>
     </div>
+  );
+}
+
+function Tab({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm ${active ? "bg-indigo-600 text-white" : "hover:bg-slate-50"}`}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
