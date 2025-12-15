@@ -71,68 +71,14 @@ const getMyRating = (uid, artId) => {
 
 // ¿Es venta directa? Si no hay fracciones (en ambos formatos) lo consideramos directa
 const detectDirect = (a) => {
-  // soportar venta_directa y ventaDirecta
   const vdRaw = coalesce(a, ['venta_directa', 'ventaDirecta', 'directSale'])
   if (vdRaw !== undefined) {
     const vd = toBool(vdRaw)
     if (vd) return true
   }
-  // si no hay configuración de fracciones, lo tomamos como directa
   const hasFractionFrom = coalesce(a, ['fractionFrom', 'fraction_from']) !== undefined
   const hasTotals      = coalesce(a, ['fractionsTotal', 'fractions_total']) !== undefined
   return !(hasFractionFrom || hasTotals)
-}
-
-/* =========================
-   MOCKS DE ORDEN DE COMPRA
-   ========================= */
-const wait = (ms) => new Promise(r => setTimeout(r, ms))
-const rid = () => Math.floor(Math.random() * 900000 + 100000)
-
-const pushMockOrder = (userId, order) => {
-  try{
-    const k = userId ? `orders_${userId}` : 'orders_anon'
-    const arr = JSON.parse(localStorage.getItem(k) || '[]')
-    arr.unshift(order)
-    localStorage.setItem(k, JSON.stringify(arr))
-  }catch{}
-}
-
-const mockBuyFractions = async ({ user, artworkId, fractions, unitPrice }) => {
-  await wait(600)
-  if (!user?.id) throw new Error('Usuario no autenticado.')
-  const amount = Number(unitPrice) * Number(fractions)
-  const order = {
-    id: rid(),
-    buyerId: String(user.id),
-    artworkId: String(artworkId),
-    fractions: Number(fractions),
-    unitPrice: Number(unitPrice),
-    amount: Number(amount),
-    status: 'pending',
-    checkoutUrl: null,
-    createdAt: new Date().toISOString(),
-  }
-  pushMockOrder(user.id, order)
-  return order
-}
-
-const mockBuyDirect = async ({ user, artworkId, price }) => {
-  await wait(600)
-  if (!user?.id) throw new Error('Usuario no autenticado.')
-  const order = {
-    id: rid(),
-    buyerId: String(user.id),
-    artworkId: String(artworkId),
-    fractions: 1,
-    unitPrice: Number(price),
-    amount: Number(price),
-    status: 'pending',
-    checkoutUrl: null,
-    createdAt: new Date().toISOString(),
-  }
-  pushMockOrder(user.id, order)
-  return order
 }
 
 export default function ArtworkDetail(){
@@ -150,7 +96,6 @@ export default function ArtworkDetail(){
   const [rateSaving, setRateSaving] = useState(false)
   const [rateErr, setRateErr] = useState('')
   const canRate = !!user
-  // 🔁 ANTES: solo buyer podía comprar. AHORA: cualquier usuario autenticado.
   const canBuy  = !!user
 
   // --- compra (modal)
@@ -166,14 +111,13 @@ export default function ArtworkDetail(){
   const mapArtwork = (raw) => {
     const isDirect = detectDirect(raw)
 
-    // soportamos image/gallery en ambos formatos
     const rawImage = coalesce(raw, ['image'])
     const rawGallery = coalesce(raw, ['gallery'])
     const gallery = Array.isArray(rawGallery) && rawGallery.length
       ? rawGallery.map(fixImageUrl)
       : [fixImageUrl(rawImage)].filter(Boolean)
 
-    // ----- ARTISTA: string u objeto -----
+    // ARTISTA: string u objeto
     let artistName = ''
     const artistVal = coalesce(raw, ['artist', 'artist_name', 'artistName', 'author', 'author_name'])
     if (typeof artistVal === 'string') {
@@ -201,13 +145,9 @@ export default function ArtworkDetail(){
       tags: Array.isArray(raw.tags) ? raw.tags : (raw.tags ? [String(raw.tags)] : []),
       price: toNum(coalesce(raw, ['price', 'precio']), 0),
 
-      // soportar fraction_from / fractionFrom
       fractionFrom: toNum(coalesce(raw, ['fractionFrom', 'fraction_from']), 0),
-
-      // soportar fractions_total / fractionsTotal
       fractionsTotal: isDirect ? 1 : toNum(coalesce(raw, ['fractionsTotal', 'fractions_total']), 0),
 
-      // ✅ soportar fractions_left / fractionsLeft (si no viene, fallback a total)
       fractionsLeft: isDirect
         ? 1
         : (() => {
@@ -224,7 +164,7 @@ export default function ArtworkDetail(){
     }
   }
 
-    const logFractions = (label, raw) => {
+  const logFractions = (label, raw) => {
     try {
       console.log(`[ArtworkDetail] ${label} - RAW:`, raw)
 
@@ -232,8 +172,8 @@ export default function ArtworkDetail(){
         id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
         status: coalesce(raw, ['status']),
         estado_venta: coalesce(raw, ['estado_venta', 'estadoVenta']),
+        venta_directa: coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']),
 
-        // posibles nombres para fracciones
         fractionsLeft: coalesce(raw, ['fractionsLeft']),
         fractions_left: coalesce(raw, ['fractions_left']),
         availableFractions: coalesce(raw, ['availableFractions']),
@@ -243,21 +183,17 @@ export default function ArtworkDetail(){
         fractions_total: coalesce(raw, ['fractions_total']),
 
         fractionFrom: coalesce(raw, ['fractionFrom', 'fraction_from']),
-        venta_directa: coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']),
       }
 
       console.table(snapshot)
-    } catch (e) {
+    } catch {
       console.log(`[ArtworkDetail] ${label} - RAW (fallback):`, raw)
     }
   }
 
-
   // ✅ Refresco real del detalle (para que % vendido + disponibles se actualicen siempre)
-    const refreshArtwork = async () => {
+  const refreshArtwork = async () => {
     const { data: fresh } = await authService.client.get(`/artworks/${id}/`)
-
-    // 🔎 LOG: lo que devuelve el backend luego de la compra
     logFractions('REFRESH after buy', fresh)
 
     const next = mapArtwork(fresh)
@@ -271,7 +207,6 @@ export default function ArtworkDetail(){
     return next
   }
 
-
   // cargar detalle + rating
   useEffect(()=>{
     let alive = true
@@ -280,21 +215,19 @@ export default function ArtworkDetail(){
 
     const fetchAll = async () => {
       try{
-        // 1) Detalle de obra
         const { data: raw } = await authService.client.get(`/artworks/${id}/`)
         if (!alive) return
 
         const mapped = mapArtwork(raw)
         setData(mapped)
 
-        // 2) Rating (endpoint dedicado)
         try {
           const { data: r } = await authService.client.get(`/artworks/${id}/rating/`)
           const serverMy = Number(r?.my || 0)
           const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           const my = serverMy || cachedMy || 0
           setRating({ avg: Number(r?.avg || 0), count: Number(r?.count || 0), my })
-        } catch(e) {
+        } catch {
           const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           setRating(prev => ({ ...prev, my: cachedMy }))
         }
@@ -308,13 +241,12 @@ export default function ArtworkDetail(){
 
     fetchAll()
     return ()=>{ alive = false }
-  }, [id, user?.id]) // ok: si cambia usuario, recalculo my rating
+  }, [id, user?.id])
 
   const isDirect = !!data?.directSale
   const isAuctioned = data?.status === 'auctioned'
   const isSold = data?.status === 'sold' || data?.estado_venta === 'vendida'
 
-  // valores para UI de tokenizadas
   const soldPct = useMemo(()=>{
     if(!data || isDirect) return 0
     const tot = toNum(data.fractionsTotal, 0)
@@ -322,13 +254,11 @@ export default function ArtworkDetail(){
     return Math.round(100 - (toNum(data.fractionsLeft, 0) / tot) * 100)
   }, [data, isDirect])
 
-  // precio “unitario”: fracción en tokenizadas, precio final en directas
   const unit = useMemo(()=>{
     if (!data) return 0
     return Number(isDirect ? data.price : data.fractionFrom) || 0
   }, [data, isDirect])
 
-  // total a pagar
   const total = useMemo(()=>{
     if (isDirect) return unit
     return Math.round(unit * Number(qty || 0) * 100) / 100
@@ -348,7 +278,6 @@ export default function ArtworkDetail(){
 
   const artistSlug = slugify(data.artist || '')
 
-  // handler de rating
   const handleRate = async (value) => {
     if (!canRate || !data?.id) return
     setRateErr('')
@@ -372,11 +301,10 @@ export default function ArtworkDetail(){
     }
   }
 
-  // compra: REAL para tokenizadas y POST mark-as-sold para venta directa
+  // ✅ compra: TOKENIZADA => /finance/tokens/buy/ | DIRECTA => /artworks/:id/purchase/
   const handleBuy = async () => {
     setBuying(true); setBuyErr('')
 
-    // ✅ Guardia inmediata: no permitir comprar si ya está vendida
     if (data?.estado_venta === 'vendida' || data?.status === 'sold') {
       setBuyErr('La obra ya está vendida.')
       setBuying(false)
@@ -384,33 +312,27 @@ export default function ArtworkDetail(){
     }
 
     try {
-      // refresco rápido del estado por si cambió algo en back (solo GET)
+      // Pre-check
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
-            // 🔎 LOG: estado del backend antes de comprar
       logFractions('PRE buy check', fresh)
 
       const directFresh = detectDirect(fresh)
       const estadoFresh = String(coalesce(fresh, ['estado_venta', 'estadoVenta']) || '').toLowerCase()
+      const ventaDirectaFlag = toBool(coalesce(fresh, ['venta_directa', 'ventaDirecta', 'directSale']))
 
-      // ✅ Si el backend ya la marca vendida, abortar
       if (estadoFresh === 'vendida' || String(coalesce(fresh, ['status'])||'').toLowerCase()==='sold') {
         throw new Error('La obra ya está vendida.')
       }
 
-      // normalizar totales y disponibles desde el back
-      const frTotal = directFresh
-        ? 1
-        : toNum(coalesce(fresh, ['fractionsTotal', 'fractions_total']), 0)
-      const frLeft = directFresh
-        ? 1
-        : (() => {
-            const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
-            if (left !== undefined) return toNum(left, 0)
-            return frTotal
-          })()
-
       if (!directFresh) {
-        // TOKENIZADA -> API real
+        // ===== TOKENIZADA =====
+        const frTotal = toNum(coalesce(fresh, ['fractionsTotal', 'fractions_total']), 0)
+        const frLeft = (() => {
+          const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+          if (left !== undefined) return toNum(left, 0)
+          return frTotal
+        })()
+
         const desired = Math.floor(Number(qty || 1))
         if (!frTotal) throw new Error('La obra no tiene fracciones configuradas.')
         if (desired < 1) throw new Error('Cantidad inválida.')
@@ -419,45 +341,30 @@ export default function ArtworkDetail(){
         const payload = { artwork_id: data.id, quantity: desired }
         await authService.client.post('/finance/tokens/buy/', payload)
 
-        // ✅ CLAVE: refresco real para actualizar porcentajes + disponibles
+        await refreshArtwork()
+        setBuyOk(true)
+
+      } else {
+        // ===== VENTA DIRECTA =====
+        // Condición clave del backend: debe ser venta_directa=true y estado_venta='publicada'
+        if (!ventaDirectaFlag) throw new Error('This artwork is not for direct sale.')
+        if (estadoFresh !== 'publicada') throw new Error('This artwork is not available for sale.')
+
+        console.log('[ArtworkDetail] DIRECT PURCHASE -> POST', `/artworks/${data.id}/purchase/`)
+        const res = await authService.client.post(`/artworks/${data.id}/purchase/`) // sin body
+        console.log('[ArtworkDetail] DIRECT PURCHASE response:', res?.data)
+
+        // Refresco para reflejar "vendida" / status / etc. en UI
         await refreshArtwork()
 
         setBuyOk(true)
-      } else {
-        // ===== VENTA DIRECTA → usar endpoint mark-as-sold =====
-        const res = await authService.client.post(`/artworks/${data.id}/mark-as-sold/`)
-        const body = res?.data
-
-        if (body && typeof body === 'object' && 'message' in body) {
-          setData(prev => ({
-            ...prev,
-            estado_venta: 'vendida',
-            status: String(prev?.status || '').toLowerCase(),
-            fractionsLeft: 0,
-          }))
-          throw new Error('La obra ya está vendida.')
-        }
-
-        // también refrescamos para mantener consistencia
-        try {
-          await refreshArtwork()
-        } catch {
-          // fallback mínimo si refresh falla
-          setData(prev => ({
-            ...prev,
-            estado_venta: 'vendida',
-            status: String(coalesce(body, ['status']) || prev?.status || '').toLowerCase(),
-            fractionsLeft: toNum(coalesce(body, ['fractionsLeft', 'fractions_left']), 0),
-            fractionsTotal: toNum(coalesce(body, ['fractionsTotal', 'fractions_total']), prev?.fractionsTotal ?? 1),
-          }))
-        }
-
-        setBuyOk(true)
       }
+
     } catch(e){
       const msg =
         e?.response?.data?.detail ||
         e?.response?.data?.error ||
+        e?.response?.data?.message ||
         (typeof e?.response?.data === 'string' ? e.response.data : '') ||
         e?.message ||
         'No se pudo completar la compra.'
@@ -503,7 +410,6 @@ export default function ArtworkDetail(){
           <aside className="lg:col-span-2">
             <div className="card-surface p-6 space-y-5">
               <div className="flex items-start gap-4">
-                {/* Avatar -> perfil del artista */}
                 <Link
                   to={`/donaciones/artista/${artistSlug}`}
                   className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold ring-1 ring-transparent hover:ring-indigo-400 transition"
@@ -531,7 +437,6 @@ export default function ArtworkDetail(){
 
               <div className="divider" />
 
-              {/* Métricas */}
               {isDirect ? (
                 <div className="grid grid-cols-1 gap-3 text-center">
                   <Metric label="Precio" value={`$${fmt(unit)}`} />
@@ -552,7 +457,6 @@ export default function ArtworkDetail(){
                 ))}
               </div>
 
-              {/* ----- Bloque de valoración ----- */}
               <div className="mt-2 border-t pt-3">
                 {canRate ? (
                   <div>
@@ -570,7 +474,6 @@ export default function ArtworkDetail(){
                   </div>
                 )}
               </div>
-              {/* -------------------------------- */}
 
               <div className="flex gap-2 pt-2">
                 <button
@@ -615,11 +518,10 @@ export default function ArtworkDetail(){
         </div>
       </div>
 
-      {/* ===== MODALES DE COMPRA ===== */}
+      {/* ===== MODAL COMPRA ===== */}
       {buyOpen && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
-            {/* Encabezado */}
             <div className="p-5 border-b border-slate-200/70 flex items-center justify-between">
               <h3 className="text-lg font-bold">{isDirect ? 'Comprar obra' : 'Comprar fracciones'}</h3>
               <button className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
@@ -635,7 +537,6 @@ export default function ArtworkDetail(){
                     ) : (
                       <>
                         <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
-                        {/* ✅ ahora se actualiza siempre porque data se refresca post-compra */}
                         <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
                       </>
                     )}
@@ -715,7 +616,7 @@ export default function ArtworkDetail(){
           </div>
         </div>
       )}
-      {/* ===== FIN MODALES ===== */}
+      {/* ===== FIN MODAL ===== */}
     </section>
   )
 }
