@@ -11,7 +11,8 @@ export default function AdminDashboard(){
   const [allArtworks, setAllArtworks] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState('Pending') // 'all' | 'Pending' | 'Approved'
+  // 'pending' | 'approved' | 'all'
+  const [filter, setFilter] = useState('pending')
 
   // Fetch data from API when search query 'q' changes
   useEffect(()=>{
@@ -23,7 +24,7 @@ export default function AdminDashboard(){
         if (q) params.set('q', q)
 
         const url = `/artworks/?${params.toString()}`
-        // 🔎 Logs de depuración del request
+
         console.log('[AdminDashboard] Fetching artworks...', {
           url,
           params: Object.fromEntries(params.entries())
@@ -31,12 +32,10 @@ export default function AdminDashboard(){
 
         const res = await api.get(url)
 
-        // 🔎 Logs de depuración de la respuesta cruda
         console.log('[AdminDashboard] Response status:', res?.status)
         console.log('[AdminDashboard] Raw data:', res?.data)
 
         const data = res?.data
-        // ✅ Normalización: soporta { results: [] } o [] directo
         const normalized = Array.isArray(data) ? data : (data?.results || [])
 
         console.log('[AdminDashboard] Normalized items count:', normalized.length)
@@ -46,14 +45,12 @@ export default function AdminDashboard(){
         }
       } catch (err) {
         if(alive){
-          // 🔎 Logs detallados del error (incluye payload del backend si existe)
           console.error('[AdminDashboard] Error fetching artworks for admin:', {
             message: err?.message,
             status: err?.response?.status,
             data: err?.response?.data
           })
           setAllArtworks([])
-          // Optionally set an error state to show in the UI
         }
       } finally {
         if (alive) setLoading(false)
@@ -63,12 +60,17 @@ export default function AdminDashboard(){
     return ()=>{ alive = false }
   }, [q])
 
-  // Apply client-side filtering
+  // ✅ Primero: excluir venta directa (mostrar solo tokenizadas)
+  // ✅ Después: filtrar por estado (pending/approved/all)
   const items = useMemo(() => {
-    if (filter === 'all') {
-      return allArtworks
-    }
-    return allArtworks.filter(item => item.status === filter)
+    const tokenizadas = allArtworks.filter(it => it?.venta_directa !== true)
+
+    if (filter === 'all') return tokenizadas
+
+    return tokenizadas.filter(it => {
+      const s = (it?.status || '').toString().toLowerCase()
+      return s === filter
+    })
   }, [allArtworks, filter])
 
   if (user?.role !== 'admin'){
@@ -90,21 +92,21 @@ export default function AdminDashboard(){
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
             <div>
               <p className="eyebrow">Admin</p>
-              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Revisión de obras</h1>
-              <p className="lead text-slate-600">Filtrá, buscá y aprobá publicaciones.</p>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Revisión de obras tokenizadas</h1>
+              <p className="lead text-slate-600">Filtrá, buscá y aprobá publicaciones tokenizadas (no venta directa).</p>
             </div>
 
             {/* filtros y búsqueda */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="inline-flex rounded-xl border border-slate-200 bg-white overflow-hidden">
-                <Tab label="Pendientes" active={filter==='Pending'} onClick={()=>setFilter('Pending')}/>
-                <Tab label="Aprobadas" active={filter==='Approved'} onClick={()=>setFilter('Approved')}/>
+                <Tab label="Pendientes" active={filter==='pending'} onClick={()=>setFilter('pending')}/>
+                <Tab label="Aprobadas" active={filter==='approved'} onClick={()=>setFilter('approved')}/>
                 <Tab label="Todas" active={filter==='all'} onClick={()=>setFilter('all')}/>
               </div>
               <div className="relative">
                 <input
                   className="input pr-10 w-64"
-                  placeholder="Buscar por título o artista…"
+                  placeholder="Buscar por título, artista o tags…"
                   value={q}
                   onChange={e=>setQ(e.target.value)}
                 />
@@ -130,24 +132,26 @@ export default function AdminDashboard(){
         {!loading && items.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {items.map(it => {
-              let imageUrl = it.image;
+              let imageUrl = it.image
               if (typeof imageUrl === 'string') {
-                const marker = 'https%3A/';
-                const index = imageUrl.indexOf(marker);
+                const marker = 'https%3A/'
+                const index = imageUrl.indexOf(marker)
                 if (index !== -1) {
-                  imageUrl = 'https://' + imageUrl.substring(index + marker.length);
+                  imageUrl = 'https://' + imageUrl.substring(index + marker.length)
                 } else if (!imageUrl.startsWith('http')) {
-                  imageUrl = `${api.defaults.baseURL}${imageUrl}`;
+                  imageUrl = `${api.defaults.baseURL}${imageUrl}`
                 }
               }
+
+              const normalizedStatus = (it.status || '').toString().toLowerCase()
 
               const statusConfig = {
                 pending: { text: 'Pendiente', className: 'bg-amber-100 text-amber-700', title: 'Pendiente de aprobación' },
                 approved: { text: 'Aprobado', className: 'bg-emerald-100 text-emerald-700', title: 'Aprobado' },
                 rejected: { text: 'Rechazada', className: 'bg-red-100 text-red-700', title: 'Rechazada' },
                 default: { text: it.status || 'Desconocido', className: 'bg-slate-100 text-slate-700', title: `Estado: ${it.status}` }
-              };
-              const currentStatus = statusConfig[it.status] || statusConfig.default;
+              }
+              const currentStatus = statusConfig[normalizedStatus] || statusConfig.default
 
               return (
                 <button
@@ -167,9 +171,20 @@ export default function AdminDashboard(){
                         {currentStatus.text}
                       </span>
                     </div>
+
                     <div className="text-sm text-slate-600">{it.artist?.name}</div>
-                    <div className="text-xs text-slate-500">
-                      {new Date(it.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-slate-500">
+                        {it.createdAt
+                          ? new Date(it.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
+                          : '—'}
+                      </div>
+
+                      {/* Badge opcional: confirma que NO es venta directa */}
+                      <span className="rounded-full px-2 py-0.5 text-[11px] bg-indigo-100 text-indigo-700">
+                        Tokenizada
+                      </span>
                     </div>
                   </div>
                 </button>
