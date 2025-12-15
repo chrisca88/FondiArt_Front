@@ -73,7 +73,7 @@ export default function App(){
           <Route path="/mercado" element={<SecondaryMarket/>} />
           <Route path="/cuenta/cambiar-password" element={<ChangePassword />} />
           <Route path="/subastas/proximas" element={<UpcomingAuctions/>} />
-          <Route path="/mis-obras" element={<MyArtworks />} />
+          <Route path="/mis-compras" element={<MyArtworks />} />
 
 
           
