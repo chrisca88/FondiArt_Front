@@ -23,7 +23,6 @@ const toBool = (v) => {
   if (v === false || v === 0 || v === '0' || v === 'false') return false
   return Boolean(v)
 }
-
 const slugify = (s = '') =>
   String(s)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -60,28 +59,86 @@ const formatDateDMY = (iso) => {
 // --- cache local del "my rating" ---
 const myRatingKey = (uid, artId) => `my_rating_${uid || 'anon'}_${artId}`
 const saveMyRating = (uid, artId, value) => {
-  try { localStorage.setItem(myRatingKey(uid, artId), String(value)) } catch {}
+  try {
+    localStorage.setItem(myRatingKey(uid, artId), String(value))
+  } catch {}
 }
 const getMyRating = (uid, artId) => {
   try {
     const v = Number(localStorage.getItem(myRatingKey(uid, artId)))
     return Number.isFinite(v) && v >= 1 && v <= 5 ? v : 0
-  } catch { return 0 }
+  } catch {
+    return 0
+  }
 }
 
 // ¿Es venta directa? Si no hay fracciones (en ambos formatos) lo consideramos directa
 const detectDirect = (a) => {
+  // soportar venta_directa y ventaDirecta
   const vdRaw = coalesce(a, ['venta_directa', 'ventaDirecta', 'directSale'])
   if (vdRaw !== undefined) {
     const vd = toBool(vdRaw)
     if (vd) return true
   }
+  // si no hay configuración de fracciones, lo tomamos como directa
   const hasFractionFrom = coalesce(a, ['fractionFrom', 'fraction_from']) !== undefined
-  const hasTotals      = coalesce(a, ['fractionsTotal', 'fractions_total']) !== undefined
+  const hasTotals = coalesce(a, ['fractionsTotal', 'fractions_total']) !== undefined
   return !(hasFractionFrom || hasTotals)
 }
 
-export default function ArtworkDetail(){
+/* =========================
+   MOCKS DE ORDEN DE COMPRA
+   ========================= */
+const wait = (ms) => new Promise(r => setTimeout(r, ms))
+const rid = () => Math.floor(Math.random() * 900000 + 100000)
+
+const pushMockOrder = (userId, order) => {
+  try {
+    const k = userId ? `orders_${userId}` : 'orders_anon'
+    const arr = JSON.parse(localStorage.getItem(k) || '[]')
+    arr.unshift(order)
+    localStorage.setItem(k, JSON.stringify(arr))
+  } catch {}
+}
+
+const mockBuyFractions = async ({ user, artworkId, fractions, unitPrice }) => {
+  await wait(600)
+  if (!user?.id) throw new Error('Usuario no autenticado.')
+  const amount = Number(unitPrice) * Number(fractions)
+  const order = {
+    id: rid(),
+    buyerId: String(user.id),
+    artworkId: String(artworkId),
+    fractions: Number(fractions),
+    unitPrice: Number(unitPrice),
+    amount: Number(amount),
+    status: 'pending',
+    checkoutUrl: null,
+    createdAt: new Date().toISOString(),
+  }
+  pushMockOrder(user.id, order)
+  return order
+}
+
+const mockBuyDirect = async ({ user, artworkId, price }) => {
+  await wait(600)
+  if (!user?.id) throw new Error('Usuario no autenticado.')
+  const order = {
+    id: rid(),
+    buyerId: String(user.id),
+    artworkId: String(artworkId),
+    fractions: 1,
+    unitPrice: Number(price),
+    amount: Number(price),
+    status: 'pending',
+    checkoutUrl: null,
+    createdAt: new Date().toISOString(),
+  }
+  pushMockOrder(user.id, order)
+  return order
+}
+
+export default function ArtworkDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const user = useSelector(s => s.auth.user)
@@ -96,28 +153,35 @@ export default function ArtworkDetail(){
   const [rateSaving, setRateSaving] = useState(false)
   const [rateErr, setRateErr] = useState('')
   const canRate = !!user
-  const canBuy  = !!user
+
+  // 🔁 ANTES: solo buyer podía comprar. AHORA: cualquier usuario autenticado.
+  const canBuy = !!user
 
   // --- compra (modal)
   const [buyOpen, setBuyOpen] = useState(false)
-  const [qty, setQty] = useState(1)          // solo para tokenizadas
+  const [qty, setQty] = useState(1) // solo para tokenizadas
   const [buying, setBuying] = useState(false)
   const [buyErr, setBuyErr] = useState('')
   const [buyOk, setBuyOk] = useState(false)
 
-  useEffect(()=>{ setQty(1); setBuyErr(''); setBuyOk(false) }, [buyOpen])
+  useEffect(() => {
+    setQty(1)
+    setBuyErr('')
+    setBuyOk(false)
+  }, [buyOpen])
 
   // ✅ Normalizador único del detalle (para load y refresh post-compra)
   const mapArtwork = (raw) => {
     const isDirect = detectDirect(raw)
 
+    // soportamos image/gallery en ambos formatos
     const rawImage = coalesce(raw, ['image'])
     const rawGallery = coalesce(raw, ['gallery'])
     const gallery = Array.isArray(rawGallery) && rawGallery.length
       ? rawGallery.map(fixImageUrl)
       : [fixImageUrl(rawImage)].filter(Boolean)
 
-    // ARTISTA: string u objeto
+    // ----- ARTISTA: string u objeto -----
     let artistName = ''
     const artistVal = coalesce(raw, ['artist', 'artist_name', 'artistName', 'author', 'author_name'])
     if (typeof artistVal === 'string') {
@@ -126,7 +190,8 @@ export default function ArtworkDetail(){
       artistName =
         artistVal.name ||
         [artistVal.first_name || artistVal.firstName, artistVal.last_name || artistVal.lastName]
-          .filter(Boolean).join(' ') ||
+          .filter(Boolean)
+          .join(' ') ||
         artistVal.username ||
         artistVal.alias ||
         ''
@@ -145,17 +210,19 @@ export default function ArtworkDetail(){
       tags: Array.isArray(raw.tags) ? raw.tags : (raw.tags ? [String(raw.tags)] : []),
       price: toNum(coalesce(raw, ['price', 'precio']), 0),
 
+      // soportar fraction_from / fractionFrom
       fractionFrom: toNum(coalesce(raw, ['fractionFrom', 'fraction_from']), 0),
+
+      // soportar fractions_total / fractionsTotal
       fractionsTotal: isDirect ? 1 : toNum(coalesce(raw, ['fractionsTotal', 'fractions_total']), 0),
 
-      fractionsLeft: isDirect
-        ? 1
-        : (() => {
-            const left = coalesce(raw, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
-            if (left !== undefined) return toNum(left, 0)
-            const tot = coalesce(raw, ['fractionsTotal', 'fractions_total'])
-            return toNum(tot, 0)
-          })(),
+      // ✅ soportar fractions_left / fractionsLeft (si no viene, fallback a total)
+      fractionsLeft: isDirect ? 1 : (() => {
+        const left = coalesce(raw, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+        if (left !== undefined) return toNum(left, 0)
+        const tot = coalesce(raw, ['fractionsTotal', 'fractions_total'])
+        return toNum(tot, 0)
+      })(),
 
       createdAt: coalesce(raw, ['createdAt', 'created_at', 'created']),
       status: String(coalesce(raw, ['status']) || '').toLowerCase(),
@@ -167,26 +234,22 @@ export default function ArtworkDetail(){
   const logFractions = (label, raw) => {
     try {
       console.log(`[ArtworkDetail] ${label} - RAW:`, raw)
-
       const snapshot = {
         id: coalesce(raw, ['id', 'artwork_id', 'artworkId']),
         status: coalesce(raw, ['status']),
         estado_venta: coalesce(raw, ['estado_venta', 'estadoVenta']),
-        venta_directa: coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']),
-
+        // posibles nombres para fracciones
         fractionsLeft: coalesce(raw, ['fractionsLeft']),
         fractions_left: coalesce(raw, ['fractions_left']),
         availableFractions: coalesce(raw, ['availableFractions']),
         available_fractions: coalesce(raw, ['available_fractions']),
-
         fractionsTotal: coalesce(raw, ['fractionsTotal']),
         fractions_total: coalesce(raw, ['fractions_total']),
-
         fractionFrom: coalesce(raw, ['fractionFrom', 'fraction_from']),
+        venta_directa: coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']),
       }
-
       console.table(snapshot)
-    } catch {
+    } catch (e) {
       console.log(`[ArtworkDetail] ${label} - RAW (fallback):`, raw)
     }
   }
@@ -194,45 +257,51 @@ export default function ArtworkDetail(){
   // ✅ Refresco real del detalle (para que % vendido + disponibles se actualicen siempre)
   const refreshArtwork = async () => {
     const { data: fresh } = await authService.client.get(`/artworks/${id}/`)
+
+    // 🔎 LOG: lo que devuelve el backend luego de la compra
     logFractions('REFRESH after buy', fresh)
 
     const next = mapArtwork(fresh)
     console.log('[ArtworkDetail] MAPPED after buy:', next)
-
     setData(next)
 
     if (!next.directSale) {
-      setQty(q => Math.min(Math.max(1, Number(q || 1)), Math.max(1, Number(next.fractionsLeft || 1))))
+      setQty(q =>
+        Math.min(
+          Math.max(1, Number(q || 1)),
+          Math.max(1, Number(next.fractionsLeft || 1))
+        )
+      )
     }
     return next
   }
 
   // cargar detalle + rating
-  useEffect(()=>{
+  useEffect(() => {
     let alive = true
     setLoading(true)
     setErr(null)
 
     const fetchAll = async () => {
-      try{
+      try {
+        // 1) Detalle de obra
         const { data: raw } = await authService.client.get(`/artworks/${id}/`)
         if (!alive) return
-
         const mapped = mapArtwork(raw)
         setData(mapped)
 
+        // 2) Rating (endpoint dedicado)
         try {
           const { data: r } = await authService.client.get(`/artworks/${id}/rating/`)
           const serverMy = Number(r?.my || 0)
           const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           const my = serverMy || cachedMy || 0
           setRating({ avg: Number(r?.avg || 0), count: Number(r?.count || 0), my })
-        } catch {
+        } catch (e) {
           const cachedMy = user?.id ? getMyRating(user.id, mapped.id) : 0
           setRating(prev => ({ ...prev, my: cachedMy }))
         }
-
-      } catch(e){
+      } catch (e) {
         setErr(e?.response?.data?.detail || e?.message || 'No se pudo cargar la obra')
       } finally {
         if (alive) setLoading(false)
@@ -240,71 +309,74 @@ export default function ArtworkDetail(){
     }
 
     fetchAll()
-    return ()=>{ alive = false }
-  }, [id, user?.id])
+    return () => { alive = false }
+  }, [id, user?.id]) // ok: si cambia usuario, recalculo my rating
 
   const isDirect = !!data?.directSale
   const isAuctioned = data?.status === 'auctioned'
   const isSold = data?.status === 'sold' || data?.estado_venta === 'vendida'
 
-  const soldPct = useMemo(()=>{
-    if(!data || isDirect) return 0
+  // valores para UI de tokenizadas
+  const soldPct = useMemo(() => {
+    if (!data || isDirect) return 0
     const tot = toNum(data.fractionsTotal, 0)
     if (!tot) return 0
     return Math.round(100 - (toNum(data.fractionsLeft, 0) / tot) * 100)
   }, [data, isDirect])
 
-  const unit = useMemo(()=>{
+  // precio “unitario”: fracción en tokenizadas, precio final en directas
+  const unit = useMemo(() => {
     if (!data) return 0
     return Number(isDirect ? data.price : data.fractionFrom) || 0
   }, [data, isDirect])
 
-  const total = useMemo(()=>{
+  // total a pagar
+  const total = useMemo(() => {
     if (isDirect) return unit
     return Math.round(unit * Number(qty || 0) * 100) / 100
   }, [unit, qty, isDirect])
 
-  if (loading) return <section className="section-frame py-16"><Skeleton/></section>
+  if (loading) return <section className="section-frame py-16"><Skeleton /></section>
+
   if (err) return (
     <section className="section-frame py-16">
       <div className="card-surface p-8 text-center">
         <h3 className="text-xl font-bold">Error</h3>
         <p className="text-slate-600 mt-1">{err}</p>
-        <div className="mt-4"><Link to="/comprar" className="btn btn-primary">Volver al marketplace</Link></div>
+        <div className="mt-4">
+          <Link to="/comprar" className="btn btn-primary">Volver al marketplace</Link>
+        </div>
       </div>
     </section>
   )
-  if (!data) return null
 
+  if (!data) return null
   const artistSlug = slugify(data.artist || '')
 
+  // handler de rating
   const handleRate = async (value) => {
     if (!canRate || !data?.id) return
     setRateErr('')
     setRateSaving(true)
-    try{
+    try {
       const res = await authService.client.post(`/artworks/${data.id}/rate/`, { value })
       const r = res?.data || {}
       const my = Number(r.my || value || 0)
-
       if (user?.id && my) saveMyRating(user.id, data.id, my)
-
-      setRating({
-        avg: Number(r.avg || 0),
-        count: Number(r.count || 0),
-        my
-      })
-    } catch(e){
+      setRating({ avg: Number(r.avg || 0), count: Number(r.count || 0), my })
+    } catch (e) {
       setRateErr(e?.response?.data?.error || e?.message || 'No se pudo registrar tu valoración.')
     } finally {
       setRateSaving(false)
     }
   }
 
-  // ✅ compra: TOKENIZADA => /finance/tokens/buy/ | DIRECTA => /artworks/:id/purchase/
+  // compra: REAL para tokenizadas y POST purchase para venta directa
   const handleBuy = async () => {
-    setBuying(true); setBuyErr('')
+    setBuying(true)
+    setBuyErr('')
 
+    // ✅ Guardia inmediata: no permitir comprar si ya está vendida
     if (data?.estado_venta === 'vendida' || data?.status === 'sold') {
       setBuyErr('La obra ya está vendida.')
       setBuying(false)
@@ -312,27 +384,30 @@ export default function ArtworkDetail(){
     }
 
     try {
-      // Pre-check
+      // refresco rápido del estado por si cambió algo en back (solo GET)
       const { data: fresh } = await authService.client.get(`/artworks/${data.id}/`)
+
+      // 🔎 LOG: estado del backend antes de comprar
       logFractions('PRE buy check', fresh)
 
       const directFresh = detectDirect(fresh)
       const estadoFresh = String(coalesce(fresh, ['estado_venta', 'estadoVenta']) || '').toLowerCase()
-      const ventaDirectaFlag = toBool(coalesce(fresh, ['venta_directa', 'ventaDirecta', 'directSale']))
 
-      if (estadoFresh === 'vendida' || String(coalesce(fresh, ['status'])||'').toLowerCase()==='sold') {
+      // ✅ Si el backend ya la marca vendida, abortar
+      if (estadoFresh === 'vendida' || String(coalesce(fresh, ['status']) || '').toLowerCase() === 'sold') {
         throw new Error('La obra ya está vendida.')
       }
 
-      if (!directFresh) {
-        // ===== TOKENIZADA =====
-        const frTotal = toNum(coalesce(fresh, ['fractionsTotal', 'fractions_total']), 0)
-        const frLeft = (() => {
-          const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
-          if (left !== undefined) return toNum(left, 0)
-          return frTotal
-        })()
+      // normalizar totales y disponibles desde el back
+      const frTotal = directFresh ? 1 : toNum(coalesce(fresh, ['fractionsTotal', 'fractions_total']), 0)
+      const frLeft = directFresh ? 1 : (() => {
+        const left = coalesce(fresh, ['fractionsLeft', 'fractions_left', 'availableFractions', 'available_fractions'])
+        if (left !== undefined) return toNum(left, 0)
+        return frTotal
+      })()
 
+      if (!directFresh) {
+        // TOKENIZADA -> API real
         const desired = Math.floor(Number(qty || 1))
         if (!frTotal) throw new Error('La obra no tiene fracciones configuradas.')
         if (desired < 1) throw new Error('Cantidad inválida.')
@@ -341,33 +416,62 @@ export default function ArtworkDetail(){
         const payload = { artwork_id: data.id, quantity: desired }
         await authService.client.post('/finance/tokens/buy/', payload)
 
+        // ✅ CLAVE: refresco real para actualizar porcentajes + disponibles
         await refreshArtwork()
         setBuyOk(true)
 
       } else {
-        // ===== VENTA DIRECTA =====
-        // Condición clave del backend: debe ser venta_directa=true y estado_venta='publicada'
-        if (!ventaDirectaFlag) throw new Error('This artwork is not for direct sale.')
-        if (estadoFresh !== 'publicada') throw new Error('This artwork is not available for sale.')
+        // ===== VENTA DIRECTA → usar endpoint CORRECTO /purchase/ =====
 
-        console.log('[ArtworkDetail] DIRECT PURCHASE -> POST', `/artworks/${data.id}/purchase/`)
-        const res = await authService.client.post(`/artworks/${data.id}/purchase/`) // sin body
-        console.log('[ArtworkDetail] DIRECT PURCHASE response:', res?.data)
+        const endpoint = `/artworks/${data.id}/purchase/`
 
-        // Refresco para reflejar "vendida" / status / etc. en UI
-        await refreshArtwork()
+        // ✅ LOG: request
+        console.log('[ArtworkDetail] DIRECT PURCHASE -> POST', endpoint, {
+          artworkId: data.id,
+          userId: user?.id,
+        })
+
+        const res = await authService.client.post(endpoint)
+
+        // ✅ LOG: response
+        console.log('[ArtworkDetail] DIRECT PURCHASE <- RESPONSE', {
+          status: res?.status,
+          data: res?.data,
+          headers: res?.headers,
+        })
+
+        // refrescamos para mantener consistencia de UI (estado_venta, status, etc.)
+        try {
+          await refreshArtwork()
+        } catch (refreshErr) {
+          console.log('[ArtworkDetail] DIRECT PURCHASE refresh failed:', refreshErr)
+          // fallback mínimo si refresh falla
+          setData(prev => ({
+            ...prev,
+            estado_venta: 'vendida',
+            status: String(prev?.status || '').toLowerCase(),
+            fractionsLeft: 0,
+          }))
+        }
 
         setBuyOk(true)
       }
 
-    } catch(e){
+    } catch (e) {
+      // ✅ LOG: error detallado
+      console.log('[ArtworkDetail] BUY ERROR:', {
+        message: e?.message,
+        status: e?.response?.status,
+        data: e?.response?.data,
+      })
+
       const msg =
         e?.response?.data?.detail ||
         e?.response?.data?.error ||
-        e?.response?.data?.message ||
         (typeof e?.response?.data === 'string' ? e.response.data : '') ||
         e?.message ||
         'No se pudo completar la compra.'
+
       setBuyErr(msg)
     } finally {
       setBuying(false)
@@ -377,6 +481,7 @@ export default function ArtworkDetail(){
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className="section-frame py-8 space-y-6">
+
         {/* breadcrumb */}
         <div className="text-sm text-slate-500">
           <Link to="/comprar" className="hover:underline">Marketplace</Link>
@@ -386,6 +491,7 @@ export default function ArtworkDetail(){
 
         {/* Hero: imagen + ficha */}
         <div className="grid lg:grid-cols-5 gap-6">
+
           {/* galería */}
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-3xl ring-1 ring-slate-200 bg-white/60">
@@ -396,11 +502,15 @@ export default function ArtworkDetail(){
                 loading="eager"
               />
             </div>
+
             <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-              {data.gallery.map((src, i)=>(
-                <button key={i} onClick={()=>setIdx(i)}
-                  className={`overflow-hidden rounded-2xl ring-1 ${idx===i ? 'ring-indigo-500' : 'ring-slate-200'} bg-white/60`}>
-                  <img src={src} alt={`mini ${i+1}`} className="h-20 w-28 object-cover"/>
+              {data.gallery.map((src, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIdx(i)}
+                  className={`overflow-hidden rounded-2xl ring-1 ${idx === i ? 'ring-indigo-500' : 'ring-slate-200'} bg-white/60`}
+                >
+                  <img src={src} alt={`mini ${i + 1}`} className="h-20 w-28 object-cover" />
                 </button>
               ))}
             </div>
@@ -409,14 +519,17 @@ export default function ArtworkDetail(){
           {/* ficha */}
           <aside className="lg:col-span-2">
             <div className="card-surface p-6 space-y-5">
+
               <div className="flex items-start gap-4">
+                {/* Avatar -> perfil del artista */}
                 <Link
                   to={`/donaciones/artista/${artistSlug}`}
                   className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-white text-sm font-bold ring-1 ring-transparent hover:ring-indigo-400 transition"
                   title="Ver perfil del artista"
                 >
-                  {String(data.artist).split(' ').map(s=>s[0]).slice(0,2).join('')}
+                  {String(data.artist).split(' ').map(s => s[0]).slice(0, 2).join('')}
                 </Link>
+
                 <div>
                   <h1 className="text-2xl font-extrabold leading-tight">{data.title}</h1>
                   <Link
@@ -425,10 +538,11 @@ export default function ArtworkDetail(){
                   >
                     {data.artist || '—'}
                   </Link>
+
                   <div className="mt-1 flex items-center gap-1 text-amber-500">
-                    <Star className="h-4 w-4"/>
+                    <Star className="h-4 w-4" />
                     <span className="text-sm font-semibold">
-                      { Number(rating.avg || 0).toFixed(1) }
+                      {Number(rating.avg || 0).toFixed(1)}
                     </span>
                     <span className="text-xs text-slate-500">({rating.count} valoraciones)</span>
                   </div>
@@ -437,6 +551,7 @@ export default function ArtworkDetail(){
 
               <div className="divider" />
 
+              {/* Métricas */}
               {isDirect ? (
                 <div className="grid grid-cols-1 gap-3 text-center">
                   <Metric label="Precio" value={`$${fmt(unit)}`} />
@@ -451,12 +566,16 @@ export default function ArtworkDetail(){
 
               <div className="flex flex-wrap gap-2">
                 {data.tags.map(t => (
-                  <span key={t} className="rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 text-xs text-slate-700">
+                  <span
+                    key={t}
+                    className="rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 text-xs text-slate-700"
+                  >
                     {t}
                   </span>
                 ))}
               </div>
 
+              {/* ----- Bloque de valoración ----- */}
               <div className="mt-2 border-t pt-3">
                 {canRate ? (
                   <div>
@@ -474,25 +593,24 @@ export default function ArtworkDetail(){
                   </div>
                 )}
               </div>
+              {/* -------------------------------- */}
 
               <div className="flex gap-2 pt-2">
                 <button
                   className={`btn flex-1 disabled:opacity-60 ${(!isDirect && isAuctioned) || isSold ? 'btn-outline' : 'btn-primary'}`}
                   disabled={!canBuy || (!isDirect && isAuctioned) || isSold}
-                  onClick={()=> setBuyOpen(true)}
+                  onClick={() => setBuyOpen(true)}
                   title={
-                    !canBuy
-                      ? 'Iniciá sesión para comprar'
-                      : isSold
-                        ? 'Obra vendida'
-                        : isDirect
-                          ? 'Comprar obra'
+                    !canBuy ? 'Iniciá sesión para comprar'
+                      : isSold ? 'Obra vendida'
+                        : isDirect ? 'Comprar obra'
                           : (isAuctioned ? 'Obra subastada: no disponible' : 'Comprar fracción')
                   }
                 >
                   {isSold ? 'Obra vendida' : (isDirect ? 'Comprar' : (isAuctioned ? 'Obra subastada' : 'Comprar fracción'))}
                 </button>
-                <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4"/></button>
+
+                <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4" /></button>
               </div>
             </div>
           </aside>
@@ -504,6 +622,7 @@ export default function ArtworkDetail(){
             <h2 className="text-lg font-bold">Sobre la obra</h2>
             <p className="mt-2 text-slate-700 leading-relaxed">{data.description}</p>
           </div>
+
           <div className="card-surface p-6">
             <h3 className="text-lg font-bold">Ficha técnica</h3>
             <ul className="mt-2 space-y-2 text-sm text-slate-700">
@@ -511,20 +630,25 @@ export default function ArtworkDetail(){
               <li><strong>Publicación:</strong> {formatDateDMY(data.createdAt)}</li>
               <li><strong>Rating:</strong> {Number(rating.avg || 0).toFixed(1)} ({rating.count})</li>
             </ul>
+
             <div className="mt-4">
-              <button onClick={()=>navigate('/comprar')} className="btn btn-outline w-full">Volver al marketplace</button>
+              <button onClick={() => navigate('/comprar')} className="btn btn-outline w-full">
+                Volver al marketplace
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ===== MODAL COMPRA ===== */}
+      {/* ===== MODALES DE COMPRA ===== */}
       {buyOpen && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
+
+            {/* Encabezado */}
             <div className="p-5 border-b border-slate-200/70 flex items-center justify-between">
               <h3 className="text-lg font-bold">{isDirect ? 'Comprar obra' : 'Comprar fracciones'}</h3>
-              <button className="btn btn-ghost" onClick={()=>setBuyOpen(false)} title="Cerrar">✕</button>
+              <button className="btn btn-ghost" onClick={() => setBuyOpen(false)} title="Cerrar">✕</button>
             </div>
 
             <div className="p-5 space-y-4">
@@ -537,6 +661,7 @@ export default function ArtworkDetail(){
                     ) : (
                       <>
                         <div>Precio unitario: <strong>${fmt(unit)}</strong></div>
+                        {/* ✅ ahora se actualiza siempre porque data se refresca post-compra */}
                         <div>Disponibles: <strong>{data.fractionsLeft}</strong></div>
                       </>
                     )}
@@ -549,35 +674,38 @@ export default function ArtworkDetail(){
                         <button
                           className="btn btn-outline"
                           type="button"
-                          onClick={()=> setQty(q => Math.max(1, Number(q||1) - 1))}
+                          onClick={() => setQty(q => Math.max(1, Number(q || 1) - 1))}
                           disabled={Number(qty) <= 1}
                           title="Restar 1"
                         >−</button>
+
                         <input
                           type="number"
                           min={1}
-                          max={Math.max(1, Number(data.fractionsLeft||1))}
+                          max={Math.max(1, Number(data.fractionsLeft || 1))}
                           step={1}
                           inputMode="numeric"
                           className="input flex-1 text-center"
                           value={qty}
-                          onChange={e=>{
-                            const v = Math.floor(Math.max(1, Number(e.target.value||1)))
-                            const max = Number(data.fractionsLeft||1)
+                          onChange={e => {
+                            const v = Math.floor(Math.max(1, Number(e.target.value || 1)))
+                            const max = Number(data.fractionsLeft || 1)
                             setQty(Math.min(v, max))
                           }}
                         />
+
                         <button
                           className="btn btn-outline"
                           type="button"
-                          onClick={()=>{
-                            const max = Number(data.fractionsLeft||1)
-                            setQty(q => Math.min(max, Number(q||1) + 1))
+                          onClick={() => {
+                            const max = Number(data.fractionsLeft || 1)
+                            setQty(q => Math.min(max, Number(q || 1) + 1))
                           }}
-                          disabled={Number(qty) >= Math.max(1, Number(data.fractionsLeft||1))}
+                          disabled={Number(qty) >= Math.max(1, Number(data.fractionsLeft || 1))}
                           title="Sumar 1"
                         >+</button>
                       </div>
+
                       <div className="mt-2 text-sm text-slate-600">
                         Total a pagar: <strong>${fmt(total)}</strong>
                       </div>
@@ -587,7 +715,7 @@ export default function ArtworkDetail(){
                   {buyErr && <div className="text-sm text-red-600">{buyErr}</div>}
 
                   <div className="pt-1 flex gap-2">
-                    <button className="btn btn-outline flex-1" onClick={()=>setBuyOpen(false)}>Cancelar</button>
+                    <button className="btn btn-outline flex-1" onClick={() => setBuyOpen(false)}>Cancelar</button>
                     <button
                       className="btn btn-primary flex-1 disabled:opacity-60"
                       disabled={buying || isSold || (!isDirect && (!qty || qty < 1))}
@@ -599,30 +727,29 @@ export default function ArtworkDetail(){
                 </>
               ) : (
                 <div className="text-center space-y-3">
-                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-emerald-700">
-                    ✓
-                  </div>
+                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-emerald-700">✓</div>
                   <h4 className="text-lg font-bold">¡Compra exitosa!</h4>
                   <p className="text-slate-600 text-sm">
-                    {isDirect
-                      ? <>Adquiriste la obra por <strong>${fmt(total)}</strong>.</>
-                      : <>Adquiriste <strong>{qty}</strong> fracción{qty>1?'es':''} por <strong>${fmt(total)}</strong>.</>
-                    }
+                    {isDirect ? (
+                      <>Adquiriste la obra por <strong>${fmt(total)}</strong>.</>
+                    ) : (
+                      <>Adquiriste <strong>{qty}</strong> fracción{qty > 1 ? 'es' : ''} por <strong>${fmt(total)}</strong>.</>
+                    )}
                   </p>
-                  <button className="btn btn-primary w-full" onClick={()=>setBuyOpen(false)}>Aceptar</button>
+                  <button className="btn btn-primary w-full" onClick={() => setBuyOpen(false)}>Aceptar</button>
                 </div>
               )}
             </div>
           </div>
         </div>
       )}
-      {/* ===== FIN MODAL ===== */}
+      {/* ===== FIN MODALES ===== */}
     </section>
   )
 }
 
 /* --- UI helpers --- */
-function Metric({label, value}){
+function Metric({ label, value }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 px-3 py-2">
       <div className="text-lg font-extrabold">{value}</div>
@@ -630,13 +757,14 @@ function Metric({label, value}){
     </div>
   )
 }
-function Skeleton(){
+
+function Skeleton() {
   return (
     <div className="grid lg:grid-cols-5 gap-6">
       <div className="lg:col-span-3">
         <div className="aspect-[4/3] w-full rounded-3xl bg-slate-200/70 animate-pulse"></div>
         <div className="mt-3 flex gap-3">
-          {Array.from({length:4}).map((_,i)=>(
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-20 w-28 rounded-2xl bg-slate-200/70 animate-pulse"></div>
           ))}
         </div>
@@ -648,37 +776,53 @@ function Skeleton(){
     </div>
   )
 }
-function Star(props){ return (<svg viewBox="0 0 24 24" fill="currentColor" {...props}><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>)}
-function Share(props){ return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-  <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/>
-</svg>)}
-function fmt(n){ return Number(n||0).toLocaleString('es-AR') }
+
+function Star(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+    </svg>
+  )
+}
+
+function Share(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+      <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49" />
+    </svg>
+  )
+}
+
+function fmt(n) {
+  return Number(n || 0).toLocaleString('es-AR')
+}
 
 /* --- selector de estrellas --- */
-function StarSelector({ value = 0, onChange }){
+function StarSelector({ value = 0, onChange }) {
   const [hover, setHover] = useState(0)
   const active = hover || value
   return (
     <div className="inline-flex items-center gap-1">
-      {[1,2,3,4,5].map(v=>(
+      {[1, 2, 3, 4, 5].map(v => (
         <button
           key={v}
           type="button"
           className="p-0.5"
-          onMouseEnter={()=>setHover(v)}
-          onMouseLeave={()=>setHover(0)}
-          onClick={()=>onChange?.(v)}
+          onMouseEnter={() => setHover(v)}
+          onMouseLeave={() => setHover(0)}
+          onClick={() => onChange?.(v)}
           aria-label={`Valorar con ${v} estrellas`}
-          title={`${v} estrella${v>1?'s':''}`}
+          title={`${v} estrella${v > 1 ? 's' : ''}`}
         >
-          <StarIcon className={`h-6 w-6 ${v <= active ? 'text-yellow-500' : 'text-slate-300'}`} filled={v <= active}/>
+          <StarIcon className={`h-6 w-6 ${v <= active ? 'text-yellow-500' : 'text-slate-300'}`} filled={v <= active} />
         </button>
       ))}
     </div>
   )
 }
-function StarIcon({ className = '', filled = true }){
+
+function StarIcon({ className = '', filled = true }) {
   return filled ? (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M12 17.3l-6.18 3.64 1.64-6.99L2 8.9l7.09-.61L12 1.5l2.91 6.79 7.09.61-5.46 5.05 1.64 6.99z" />
