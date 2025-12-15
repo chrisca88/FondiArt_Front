@@ -20,6 +20,8 @@ import ArtworkDetail from './pages/artworks/ArtworkDetail.jsx'
 import Profile from './pages/account/Profile.jsx'
 import MyWorks from './pages/dashboard/MyWorks.jsx'
 import ArtworkStats from './pages/artworks/ArtworkStats.jsx'
+import MyArtworks from './pages/buyer/MyArtworks.jsx'
+
 
 import UpcomingAuctions from './pages/auctions/UpcomingAuctions.jsx'
 
@@ -71,6 +73,8 @@ export default function App(){
           <Route path="/mercado" element={<SecondaryMarket/>} />
           <Route path="/cuenta/cambiar-password" element={<ChangePassword />} />
           <Route path="/subastas/proximas" element={<UpcomingAuctions/>} />
+          <Route path="/mis-obras" element={<MyArtworks />} />
+
 
           
 
