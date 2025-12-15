@@ -90,7 +90,7 @@ export default function MyArtworks() {
         if (!user?.id) {
           if (alive) {
             setItems([])
-            setError('Necesitás iniciar sesión para ver tus obras.')
+            setError('Necesitás iniciar sesión para ver tus compras.')
           }
           return
         }
@@ -124,9 +124,15 @@ export default function MyArtworks() {
     return () => { alive = false }
   }, [user?.id])
 
+  // ✅ Solo venta directa
   const mapped = useMemo(() => {
-    return items.map((raw) => {
+    const onlyDirect = items.filter((raw) => {
       const ventaDirecta = toBool(coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']))
+      return ventaDirecta === true
+    })
+
+    return onlyDirect.map((raw) => {
+      const ventaDirecta = true // por el filtro
       const artistObj = raw?.artist
       const artistName =
         typeof artistObj === 'string'
@@ -145,9 +151,6 @@ export default function MyArtworks() {
         status: raw?.status,
         estado_venta: raw?.estado_venta,
         price: raw?.price,
-        fractionFrom: raw?.fractionFrom,
-        fractionsTotal: raw?.fractionsTotal,
-        fractionsLeft: raw?.fractionsLeft,
       }
     })
   }, [items])
@@ -161,7 +164,7 @@ export default function MyArtworks() {
           <p className="eyebrow">Buyer</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mis obras</h1>
           <p className="lead text-slate-600 mt-1">
-            Obras que compraste (venta directa o fracciones tokenizadas).
+            Obras compradas por <strong>venta directa</strong>.
           </p>
         </div>
 
@@ -180,8 +183,10 @@ export default function MyArtworks() {
 
         {!loading && !error && mapped.length === 0 && (
           <div className="card-surface p-10 text-center">
-            <h3 className="text-xl font-bold">Todavía no compraste obras</h3>
-            <p className="text-slate-600 mt-1">Explorá el marketplace para adquirir una obra.</p>
+            <h3 className="text-xl font-bold">No tenés compras de venta directa</h3>
+            <p className="text-slate-600 mt-1">
+              Si compraste fracciones tokenizadas, no se listan en esta sección.
+            </p>
             <div className="mt-4">
               <Link to="/comprar" className="btn btn-primary">Ir al marketplace</Link>
             </div>
@@ -217,21 +222,17 @@ export default function MyArtworks() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-bold line-clamp-1">{it.title}</div>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs shrink-0 ${
-                        it.ventaDirecta
-                          ? 'bg-slate-100 text-slate-700'
-                          : 'bg-indigo-100 text-indigo-700'
-                      }`}
-                      title={it.ventaDirecta ? 'Venta directa' : 'Tokenizada'}
+                      className="rounded-full px-2 py-0.5 text-xs shrink-0 bg-slate-100 text-slate-700"
+                      title="Venta directa"
                     >
-                      {it.ventaDirecta ? 'Directa' : 'Token'}
+                      Directa
                     </span>
                   </div>
 
                   <div className="text-sm text-slate-600 line-clamp-1">{it.artist}</div>
 
                   <div className="text-xs text-slate-500">
-                    Comprada / registrada: {formatDate(it.createdAt)}
+                    Registrada: {formatDate(it.createdAt)}
                   </div>
                 </div>
               </Link>
