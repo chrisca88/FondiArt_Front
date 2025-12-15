@@ -93,7 +93,7 @@ export default function AdminDashboard(){
             <div>
               <p className="eyebrow">Admin</p>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Revisión de obras tokenizadas</h1>
-              <p className="lead text-slate-600">Filtrá, buscá y aprobá publicaciones tokenizadas (no venta directa).</p>
+              <p className="lead text-slate-600">Filtrá, buscá y aprobá publicaciones tokenizadas</p>
             </div>
 
             {/* filtros y búsqueda */}
