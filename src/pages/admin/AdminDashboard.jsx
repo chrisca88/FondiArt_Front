@@ -133,13 +133,25 @@ export default function AdminDashboard(){
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {items.map(it => {
               let imageUrl = it.image
+
               if (typeof imageUrl === 'string') {
+                const original = imageUrl
+
+                // ✅ FIX: si la URL trae un "https%3A/" embebido, cortamos TODO lo previo (incluido tu dominio)
+                // Ej: "https://api.fondiart.com.ar/https%3A/res.cloudinary.com/..." -> "https://res.cloudinary.com/..."
                 const marker = 'https%3A/'
                 const index = imageUrl.indexOf(marker)
                 if (index !== -1) {
                   imageUrl = 'https://' + imageUrl.substring(index + marker.length)
                 } else if (!imageUrl.startsWith('http')) {
                   imageUrl = `${api.defaults.baseURL}${imageUrl}`
+                }
+
+                // ✅ logs para ver el before/after
+                if (original !== imageUrl) {
+                  console.log('[AdminDashboard] Image URL normalized:', { id: it.id, original, imageUrl })
+                } else {
+                  console.log('[AdminDashboard] Image URL (no change):', { id: it.id, imageUrl })
                 }
               }
 
