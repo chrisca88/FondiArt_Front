@@ -55,6 +55,17 @@ export default function AuctionDetail(){
       </svg>
     `)
 
+  // ✅ Avatar genérico embebido (evita via.placeholder.com)
+  const GENERIC_AVATAR =
+    'data:image/svg+xml;charset=UTF-8,' +
+    encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+        <rect width="100%" height="100%" rx="32" ry="32" fill="#e2e8f0"/>
+        <circle cx="32" cy="26" r="12" fill="#94a3b8"/>
+        <path d="M12 56c4-12 16-16 20-16s16 4 20 16" fill="#94a3b8"/>
+      </svg>
+    `)
+
   async function searchUsers(q){
     const term = (q || '').trim().toLowerCase()
     if (term.length < 2){
@@ -152,6 +163,19 @@ export default function AuctionDetail(){
     }
 
     return out
+  }
+
+  // ✅ Avatar: si no hay avatar -> genérico embebido; si hay -> url normalizada
+  const getAvatarSrc = (u) => {
+    const raw =
+      u?.avatarUrl ??
+      u?.avatar_url ??
+      u?.avatar ??
+      u?.image ??
+      u?.photo ??
+      ''
+    const fixed = normalizeImageUrl(typeof raw === 'string' ? raw : '')
+    return fixed || GENERIC_AVATAR
   }
 
   // ✅ Si venís desde una card que sí tenía imagen, la tomamos como fallback
@@ -581,10 +605,10 @@ export default function AuctionDetail(){
                             onClick={()=>{ setSelectedWinner({ id: u.id, name: u.name, email: u.email, dni: u.dni }); setUserQuery(u.name); setUserResults([]) }}
                           >
                             <img
-                              src={u.avatarUrl || 'https://via.placeholder.com/32?text=U'}
+                              src={getAvatarSrc(u)}
                               alt={u.name}
                               className="h-8 w-8 rounded-full object-cover"
-                              onError={(e)=>{ e.currentTarget.src='https://via.placeholder.com/32?text=U' }}
+                              onError={(e)=>{ e.currentTarget.src = GENERIC_AVATAR }}
                             />
                             <div className="min-w-0">
                               <div className="text-sm font-medium truncate">
