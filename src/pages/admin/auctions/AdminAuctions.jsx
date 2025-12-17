@@ -56,16 +56,28 @@ export default function AdminAuctions(){
   // Normaliza URL de imagen
   function normalizeImageUrl(u){
     if (!u || typeof u !== 'string') return u
+    let url = u.trim()
+    if (!url) return url
+
+    // ✅ FIX: caso "https:/res.cloudinary..." (falta un slash)
+    if (url.startsWith('https:/') && !url.startsWith('https://')) {
+      url = 'https://' + url.slice('https:/'.length)
+    }
+    // ✅ FIX: caso "http:/..." (falta un slash)
+    if (url.startsWith('http:/') && !url.startsWith('http://')) {
+      url = 'http://' + url.slice('http:/'.length)
+    }
+
     const httpsMarker = 'https%3A/'
     const httpMarker  = 'http%3A/'
-    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
-    if (u.includes(httpMarker))  return 'https://' + u.substring(u.indexOf(httpMarker) + httpMarker.length)
-    if (/^https?:\/\//i.test(u)) return u
-    if (u.startsWith('/')) {
+    if (url.includes(httpsMarker)) return 'https://' + url.substring(url.indexOf(httpsMarker) + httpsMarker.length)
+    if (url.includes(httpMarker))  return 'https://' + url.substring(url.indexOf(httpMarker) + httpMarker.length)
+    if (/^https?:\/\//i.test(url)) return url
+    if (url.startsWith('/')) {
       const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
-      return base + u
+      return base + url
     }
-    return u
+    return url
   }
 
   // 🧩 Filtro corregido
@@ -159,7 +171,6 @@ export default function AdminAuctions(){
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {items.map(it => {
-                // ✅ tomar imagen desde varios campos posibles (según cómo venga el backend)
                 const rawImage =
                   it?.artwork_image ??
                   it?.artwork?.image ??
@@ -214,7 +225,6 @@ export default function AdminAuctions(){
                         <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
                           {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
                         </Link>
-                        {/* 🔸 Eliminar solo si no está en 'finished' */}
                         {tab !== 'finished' && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
