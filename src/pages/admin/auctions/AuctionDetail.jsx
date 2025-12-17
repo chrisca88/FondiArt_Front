@@ -41,6 +41,19 @@ export default function AuctionDetail(){
   const [closeOk, setCloseOk] = useState(false)
   // -------------------------------------------------------------------
 
+  // ✅ MODIFICACIÓN: placeholder embebido (evita via.placeholder.com)
+  const FALLBACK_IMG =
+    'data:image/svg+xml;charset=UTF-8,' +
+    encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+        <rect width="100%" height="100%" fill="#f1f5f9"/>
+        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+              font-family="Arial, sans-serif" font-size="28" fill="#64748b">
+          Sin imagen
+        </text>
+      </svg>
+    `)
+
   async function searchUsers(q){
     const term = (q || '').trim().toLowerCase()
     if (term.length < 2){
@@ -474,7 +487,7 @@ export default function AuctionDetail(){
                 alt={artworkTitle}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
-                onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Sin+imagen' }}
+                onError={(e) => { e.currentTarget.src = FALLBACK_IMG }}
               />
             </div>
           </div>
