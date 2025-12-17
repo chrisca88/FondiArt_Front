@@ -35,12 +35,36 @@ export default function AdminArtworkReview(){
     let alive = true
     setLoading(true)
     setContractAddress(null)
+
     api.get(`/artworks/${id}/`).then(res => {
       if(!alive) return
       const item = res.data
+
+      // ✅ LOGS para detectar si back envía auctionDate o auction_date (u otro)
+      try {
+        console.log('[AdminArtworkReview][FETCH][OK] keys=', item ? Object.keys(item) : '(null)')
+        console.log('[AdminArtworkReview][FETCH] auctionDate=', item?.auctionDate, 'auction_date=', item?.auction_date)
+      } catch {}
+
       setData(item)
       setBasePrice(Number(item.price || 0))
-      setAuctionDate(item.auctionDate || '')
+
+      // ✅ FIX: soportar auctionDate y auction_date (ISO -> YYYY-MM-DD)
+      const rawAuction =
+        item?.auctionDate ??
+        item?.auction_date ??
+        ''
+
+      const normalizedAuctionDate =
+        (typeof rawAuction === 'string' && rawAuction)
+          ? rawAuction.slice(0, 10) // sirve tanto si viene "YYYY-MM-DD" como si viene ISO
+          : ''
+
+      setAuctionDate(normalizedAuctionDate)
+
+      // ✅ LOG final: qué quedó seteado en el input
+      console.log('[AdminArtworkReview] auctionDate input value=', normalizedAuctionDate)
+
       setLoading(false)
 
       if (item.status === 'Approved' && item.contract_address) {
