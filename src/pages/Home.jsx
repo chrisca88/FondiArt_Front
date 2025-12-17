@@ -46,17 +46,25 @@ export default function Home(){
   return (
     <>
       {/* HERO */}
-      <section ref={heroRef} id="hero" className={`${sec}`} style={{ '--tint': tints.hero, '--alpha': progress.hero }}>
+      <section
+        ref={heroRef}
+        id="hero"
+        className={`${sec}`}
+        style={{ '--tint': tints.hero, '--alpha': progress.hero }}
+      >
         <div className="w-full">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-center">
-            <div>
+
+            {/* COLUMNA IZQUIERDA */}
+            <div className="h-[420px] flex flex-col justify-center">
               <img
                 src={fondiartLogo}
                 alt="FondiArt"
-                className="h-12 sm:h-14 lg:h-16 w-auto object-contain"
+                className="w-[260px] sm:w-[320px] lg:w-[360px] mb-6 object-contain"
                 loading="eager"
               />
-              <p className="mt-4 text-lg text-slate-600 max-w-xl">
+
+              <p className="text-lg text-slate-600 max-w-xl">
                 Conectamos artistas e inversores. Comprá fracciones de obras o publicá tus obras si sos artista.
               </p>
 
@@ -69,6 +77,7 @@ export default function Home(){
               )}
             </div>
 
+            {/* COLUMNA DERECHA */}
             <div className="relative">
               <div className="absolute -inset-2 -z-10 rounded-3xl bg-gradient-to-tr from-indigo-200 via-purple-200 to-pink-200 blur-lg opacity-60"></div>
               <img
@@ -77,12 +86,18 @@ export default function Home(){
                 className="w-full h-[420px] object-cover rounded-3xl border border-slate-200 shadow-xl"
               />
             </div>
+
           </div>
         </div>
       </section>
 
       {/* INFO */}
-      <section ref={infoRef} id="info" className={`${sec}`} style={{ '--tint': tints.info, '--alpha': progress.info }}>
+      <section
+        ref={infoRef}
+        id="info"
+        className={`${sec}`}
+        style={{ '--tint': tints.info, '--alpha': progress.info }}
+      >
         <div className="w-full">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Info/>
@@ -91,7 +106,12 @@ export default function Home(){
       </section>
 
       {/* FAQ */}
-      <section ref={faqRef} id="faq" className={`${sec}`} style={{ '--tint': tints.faq, '--alpha': progress.faq }}>
+      <section
+        ref={faqRef}
+        id="faq"
+        className={`${sec}`}
+        style={{ '--tint': tints.faq, '--alpha': progress.faq }}
+      >
         <div className="w-full">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <FAQ/>
