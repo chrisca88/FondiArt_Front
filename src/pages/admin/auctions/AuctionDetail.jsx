@@ -1,13 +1,14 @@
 // src/pages/admin/auctions/AuctionDetail.jsx 
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useSelector } from 'react-redux'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom'
 import api from '../../../utils/api.js'
 
 export default function AuctionDetail(){
   const { id } = useParams()
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
+  const location = useLocation()
 
   // ----------------------- HOOKS (todas arriba) -----------------------
   const [data, setData] = useState(null)
@@ -41,7 +42,7 @@ export default function AuctionDetail(){
   const [closeOk, setCloseOk] = useState(false)
   // -------------------------------------------------------------------
 
-  // ✅ MODIFICACIÓN: placeholder embebido (evita via.placeholder.com)
+  // ✅ Placeholder embebido (evita via.placeholder.com)
   const FALLBACK_IMG =
     'data:image/svg+xml;charset=UTF-8,' +
     encodeURIComponent(`
@@ -122,22 +123,43 @@ export default function AuctionDetail(){
     return d.toISOString().slice(0,19) + 'Z'
   }
 
-  // Normalizador de URLs de imagen (evita prefijos indeseados)
+  // ✅ Normalizador de URLs de imagen (corrige https:/ y http:/, encoded y relativas)
   const normalizeImageUrl = (u) => {
     if (!u || typeof u !== 'string') return ''
+    let out = u.trim()
+    if (!out) return ''
+
     const httpsMarker = 'https%3A/'
     const httpMarker  = 'http%3A/'
-    if (u.includes(httpsMarker)) return 'https://' + u.substring(u.indexOf(httpsMarker) + httpsMarker.length)
-    if (u.includes(httpMarker))  return 'https://' + u.substring(u.indexOf(httpMarker) + httpMarker.length)
-    if (/^https?:\/\//i.test(u)) return u
-    if (u.startsWith('/')) {
-      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
-      const out = base + u
-      console.log('[AuctionDetail][IMG] relative→absolute', { in: u, out })
-      return out
+
+    if (out.includes(httpsMarker)) out = 'https://' + out.substring(out.indexOf(httpsMarker) + httpsMarker.length)
+    else if (out.includes(httpMarker)) out = 'https://' + out.substring(out.indexOf(httpMarker) + httpMarker.length)
+
+    // ✅ caso "https:/res.cloudinary..." (falta un slash)
+    if (out.startsWith('https:/') && !out.startsWith('https://')) {
+      out = 'https://' + out.slice('https:/'.length)
     }
-    return u
+    // ✅ caso "http:/..." (por las dudas)
+    if (out.startsWith('http:/') && !out.startsWith('http://')) {
+      out = 'https://' + out.slice('http:/'.length)
+    }
+
+    if (/^https?:\/\//i.test(out)) return out
+
+    if (out.startsWith('/')) {
+      const base = (api?.defaults?.baseURL || '').replace(/\/$/, '')
+      return base + out
+    }
+
+    return out
   }
+
+  // ✅ Si venís desde una card que sí tenía imagen, la tomamos como fallback
+  const passedImage =
+    location?.state?.artwork_image ||
+    location?.state?.image ||
+    location?.state?.imgSrc ||
+    ''
 
   // --- función reutilizable para obtener el detalle ---
   async function fetchDetail(aliveRef = { current: true }) {
@@ -155,7 +177,7 @@ export default function AuctionDetail(){
       console.log('[AuctionDetail][FETCH-DETAIL][DATA] keys=', item ? Object.keys(item) : '(null)')
       console.log('[AuctionDetail][FETCH-DETAIL][ForFilters]', {
         id: item?.id,
-        status: item?.status,           // 'upcoming' | 'finished' | 'cancelled'
+        status: item?.status,
         auction_date: item?.auction_date,
         artwork_title: item?.artwork_title,
         artist_name: item?.artist_name
@@ -483,7 +505,7 @@ export default function AuctionDetail(){
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-3xl ring-1 ring-slate-200 bg-white/60">
               <img
-                src={normalizeImageUrl(data.artwork_image || data.image || '')}
+                src={normalizeImageUrl(data.artwork_image || data.image || passedImage || '')}
                 alt={artworkTitle}
                 className="w-full aspect-[4/3] object-cover"
                 loading="eager"
@@ -509,12 +531,10 @@ export default function AuctionDetail(){
                     : status === 'cancelled' ? 'bg-red-100 text-red-700'
                     : 'bg-amber-100 text-amber-700'
                 }`}>
-                  {/* 🔸 Traducción solo para 'finished' */}
                   {status === 'finished' ? 'Finalizada' : status}
                 </span>
               </div>
 
-              {/* Cambiar fecha de subasta: oculto si está finalizada */}
               {status !== 'finished' && (
                 <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
                   <label className="form-label" htmlFor="auctionLocal">Nueva fecha/hora de subasta</label>
@@ -538,7 +558,6 @@ export default function AuctionDetail(){
                 </div>
               )}
 
-              {/* Ganador: selector por búsqueda (solo si NO está finalizada) */}
               {status !== 'finished' && (
                 <>
                   <div>
@@ -553,7 +572,6 @@ export default function AuctionDetail(){
                     {usersLoading && <div className="text-xs text-slate-500 mt-1">Buscando usuarios…</div>}
                     {usersErr && <div className="text-sm text-red-600 mt-1">{usersErr}</div>}
 
-                    {/* Resultados */}
                     {userResults.length > 0 && (
                       <ul className="mt-2 max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white/90 divide-y">
                         {userResults.map(u => (
@@ -579,7 +597,6 @@ export default function AuctionDetail(){
                       </ul>
                     )}
 
-                    {/* Selección */}
                     {selectedWinner && (
                       <div className="mt-2 text-sm text-emerald-700">
                         Seleccionado: <strong>{selectedWinner.name}</strong>{' '}
@@ -615,7 +632,6 @@ export default function AuctionDetail(){
                 </>
               )}
 
-              {/* Bloque resumen para finalizadas */}
               {status === 'finished' && (
                 <div className="rounded-xl bg-emerald-50 text-emerald-700 p-3 text-sm">
                   <div>
@@ -639,7 +655,6 @@ export default function AuctionDetail(){
         </div>
       </div>
 
-      {/* Modal éxito (reservado para futuros flujos) */}
       {ok && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 text-center">
