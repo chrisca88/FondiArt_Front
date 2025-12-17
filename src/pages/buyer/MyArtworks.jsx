@@ -124,15 +124,10 @@ export default function MyArtworks() {
     return () => { alive = false }
   }, [user?.id])
 
-  // ✅ Solo venta directa
+  // ✅ Mostrar TODAS las obras (venta directa + tokenizadas)
   const mapped = useMemo(() => {
-    const onlyDirect = items.filter((raw) => {
+    return items.map((raw) => {
       const ventaDirecta = toBool(coalesce(raw, ['venta_directa', 'ventaDirecta', 'directSale']))
-      return ventaDirecta === true
-    })
-
-    return onlyDirect.map((raw) => {
-      const ventaDirecta = true // por el filtro
       const artistObj = raw?.artist
       const artistName =
         typeof artistObj === 'string'
@@ -164,7 +159,7 @@ export default function MyArtworks() {
           <p className="eyebrow">Buyer</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Mis obras</h1>
           <p className="lead text-slate-600 mt-1">
-            Obras compradas por <strong>venta directa</strong>.
+            Obras compradas.
           </p>
         </div>
 
@@ -176,16 +171,16 @@ export default function MyArtworks() {
 
         {!loading && error && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm">
-            {error} {' '}
+            {error}{' '}
             {!user && <Link to="/login" className="underline font-semibold">Iniciar sesión</Link>}
           </div>
         )}
 
         {!loading && !error && mapped.length === 0 && (
           <div className="card-surface p-10 text-center">
-            <h3 className="text-xl font-bold">No tenés compras de venta directa</h3>
+            <h3 className="text-xl font-bold">No tenés compras registradas</h3>
             <p className="text-slate-600 mt-1">
-              Si compraste fracciones tokenizadas, no se listan en esta sección.
+              Cuando compres una obra (directa o tokenizada), la vas a ver acá.
             </p>
             <div className="mt-4">
               <Link to="/comprar" className="btn btn-primary">Ir al marketplace</Link>
@@ -223,9 +218,9 @@ export default function MyArtworks() {
                     <div className="font-bold line-clamp-1">{it.title}</div>
                     <span
                       className="rounded-full px-2 py-0.5 text-xs shrink-0 bg-slate-100 text-slate-700"
-                      title="Venta directa"
+                      title={it.ventaDirecta ? 'Venta directa' : 'Tokenizada'}
                     >
-                      Directa
+                      {it.ventaDirecta ? 'Directa' : 'Tokenizada'}
                     </span>
                   </div>
 
