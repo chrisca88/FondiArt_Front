@@ -13,6 +13,19 @@ export default function AdminAuctions(){
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // ✅ placeholder embebido (no depende de via.placeholder.com)
+  const FALLBACK_IMG =
+    'data:image/svg+xml;charset=UTF-8,' +
+    encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+        <rect width="100%" height="100%" fill="#f1f5f9"/>
+        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+              font-family="Arial, sans-serif" font-size="28" fill="#64748b">
+          Sin imagen
+        </text>
+      </svg>
+    `)
+
   useEffect(()=>{
     let alive = true
     setLoading(true)
@@ -145,47 +158,77 @@ export default function AdminAuctions(){
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {items.map(it => (
-                <article key={it.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
-                  <img
-                    src={normalizeImageUrl(it.artwork_image)}
-                    alt={it.artwork_title}
-                    className="aspect-[4/3] w-full object-cover"
-                    onError={(e)=>{ e.currentTarget.src='https://via.placeholder.com/800x600?text=Sin+imagen' }}
-                  />
-                  <div className="p-4 space-y-2">
-                    <div className="font-bold line-clamp-1">{it.artwork_title}</div>
-                    <div className="text-sm text-slate-600">{it.artist_name}</div>
+              {items.map(it => {
+                // ✅ tomar imagen desde varios campos posibles (según cómo venga el backend)
+                const rawImage =
+                  it?.artwork_image ??
+                  it?.artwork?.image ??
+                  it?.artwork?.image_url ??
+                  it?.artwork?.imageUrl ??
+                  it?.artworkImage ??
+                  it?.image ??
+                  it?.image_url ??
+                  it?.imageUrl ??
+                  ''
 
-                    <div className="text-xs text-slate-500">
-                      Fecha de subasta: {it.auction_date ? new Date(it.auction_date).toLocaleString('es-AR') : '—'}
-                    </div>
+                const imgSrc = normalizeImageUrl(rawImage) || FALLBACK_IMG
 
-                    {tab === 'finished' && (
-                      <div className="mt-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs p-2">
-                        Ganador: <strong>{it.buyer || '—'}</strong><br/>
-                        Precio final: ${Number(it.final_price||0).toLocaleString('es-AR')}
+                console.log('[AdminAuctions] Image debug:', {
+                  auctionId: it?.id,
+                  rawImage,
+                  imgSrc
+                })
+
+                return (
+                  <article key={it.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70">
+                    <img
+                      src={imgSrc}
+                      alt={it.artwork_title}
+                      className="aspect-[4/3] w-full object-cover"
+                      onError={(e)=>{
+                        console.error('[AdminAuctions] Image onError:', {
+                          auctionId: it?.id,
+                          attempted: e?.currentTarget?.src,
+                          rawImage,
+                          normalized: imgSrc
+                        })
+                        e.currentTarget.src = FALLBACK_IMG
+                      }}
+                    />
+                    <div className="p-4 space-y-2">
+                      <div className="font-bold line-clamp-1">{it.artwork_title}</div>
+                      <div className="text-sm text-slate-600">{it.artist_name}</div>
+
+                      <div className="text-xs text-slate-500">
+                        Fecha de subasta: {it.auction_date ? new Date(it.auction_date).toLocaleString('es-AR') : '—'}
                       </div>
-                    )}
 
-                    <div className="mt-3 flex items-center gap-2">
-                      <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
-                        {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
-                      </Link>
-                      {/* 🔸 Eliminar solo si no está en 'finished' */}
-                      {tab !== 'finished' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
-                          className="btn btn-outline shrink-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                          title="Eliminar subasta"
-                        >
-                          <TrashIcon/>
-                        </button>
+                      {tab === 'finished' && (
+                        <div className="mt-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs p-2">
+                          Ganador: <strong>{it.buyer || '—'}</strong><br/>
+                          Precio final: ${Number(it.final_price||0).toLocaleString('es-AR')}
+                        </div>
                       )}
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <Link to={`/admin/subastas/${it.id}`} className="btn btn-outline w-full">
+                          {tab === 'finished' ? 'Ver detalle' : 'Gestionar'}
+                        </Link>
+                        {/* 🔸 Eliminar solo si no está en 'finished' */}
+                        {tab !== 'finished' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteAuction(it.id, it.artwork_title); }}
+                            className="btn btn-outline shrink-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                            title="Eliminar subasta"
+                          >
+                            <TrashIcon/>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                )
+              })}
             </div>
           )
         )}
