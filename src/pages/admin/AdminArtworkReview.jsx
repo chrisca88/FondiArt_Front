@@ -1,7 +1,7 @@
 // src/pages/admin/AdminArtworkReview.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams, Link, useLocation } from 'react-router-dom'
 import api from '../../utils/api.js'
 const FRACTIONS_TOTAL = 100000
 
@@ -9,6 +9,7 @@ export default function AdminArtworkReview(){
   const { id } = useParams()
   const user = useSelector(s => s.auth.user)
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -27,6 +28,9 @@ export default function AdminArtworkReview(){
     return local.toISOString().slice(0,10)
   }, [])
 
+  // ✅ NUEVO: fecha pasada desde la card (si existe)
+  const passedAuctionIso = location?.state?.auctionDate || ''
+
   // MODAL éxito
   const [successOpen, setSuccessOpen] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
@@ -36,34 +40,39 @@ export default function AdminArtworkReview(){
     setLoading(true)
     setContractAddress(null)
 
+    console.log('[AdminArtworkReview][FETCH] start', { id, passedAuctionIso })
+
     api.get(`/artworks/${id}/`).then(res => {
       if(!alive) return
       const item = res.data
 
-      // ✅ LOGS para detectar si back envía auctionDate o auction_date (u otro)
-      try {
-        console.log('[AdminArtworkReview][FETCH][OK] keys=', item ? Object.keys(item) : '(null)')
-        console.log('[AdminArtworkReview][FETCH] auctionDate=', item?.auctionDate, 'auction_date=', item?.auction_date)
-      } catch {}
+      console.log('[AdminArtworkReview][FETCH][OK] keys=', item ? Object.keys(item) : '(null)')
+      console.log('[AdminArtworkReview][FETCH] auctionDate=', item?.auctionDate, 'auction_date=', item?.auction_date, 'passedAuctionIso=', passedAuctionIso)
 
       setData(item)
       setBasePrice(Number(item.price || 0))
 
-      // ✅ FIX: soportar auctionDate y auction_date (ISO -> YYYY-MM-DD)
-      const rawAuction =
-        item?.auctionDate ??
-        item?.auction_date ??
-        ''
+      // ✅ NUEVO: si backend no trae auctionDate, usamos lo pasado desde la card
+      const fromBackend = item?.auctionDate || item?.auction_date || ''
+      const iso = fromBackend || passedAuctionIso || ''
 
-      const normalizedAuctionDate =
-        (typeof rawAuction === 'string' && rawAuction)
-          ? rawAuction.slice(0, 10) // sirve tanto si viene "YYYY-MM-DD" como si viene ISO
-          : ''
+      // el input type="date" necesita YYYY-MM-DD
+      const toDateOnly = (v) => {
+        if (!v) return ''
+        try {
+          const d = new Date(v)
+          if (!isNaN(d)) return d.toISOString().slice(0,10)
+        } catch {}
+        // si ya viene "YYYY-MM-DD"
+        const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/)
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`
+        return ''
+      }
 
-      setAuctionDate(normalizedAuctionDate)
+      const dateOnly = toDateOnly(iso)
+      setAuctionDate(dateOnly)
 
-      // ✅ LOG final: qué quedó seteado en el input
-      console.log('[AdminArtworkReview] auctionDate input value=', normalizedAuctionDate)
+      console.log('[AdminArtworkReview] auctionDate input value=', dateOnly)
 
       setLoading(false)
 
@@ -73,8 +82,9 @@ export default function AdminArtworkReview(){
     }).catch(e=>{
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
     })
+
     return ()=>{ alive = false }
-  }, [id])
+  }, [id, passedAuctionIso])
 
   const isPending = useMemo(()=> data && (data.status === 'Pending'), [data])
   const unit = useMemo(() => Number(((Number(basePrice)||0) / FRACTIONS_TOTAL).toFixed(2)), [basePrice])

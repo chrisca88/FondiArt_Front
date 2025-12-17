@@ -137,8 +137,6 @@ export default function AdminDashboard(){
               if (typeof imageUrl === 'string') {
                 const original = imageUrl
 
-                // ✅ FIX: si la URL trae un "https%3A/" embebido, cortamos TODO lo previo (incluido tu dominio)
-                // Ej: "https://api.fondiart.com.ar/https%3A/res.cloudinary.com/..." -> "https://res.cloudinary.com/..."
                 const marker = 'https%3A/'
                 const index = imageUrl.indexOf(marker)
                 if (index !== -1) {
@@ -147,7 +145,6 @@ export default function AdminDashboard(){
                   imageUrl = `${api.defaults.baseURL}${imageUrl}`
                 }
 
-                // ✅ logs para ver el before/after
                 if (original !== imageUrl) {
                   console.log('[AdminDashboard] Image URL normalized:', { id: it.id, original, imageUrl })
                 } else {
@@ -165,10 +162,31 @@ export default function AdminDashboard(){
               }
               const currentStatus = statusConfig[normalizedStatus] || statusConfig.default
 
+              // ✅ NUEVO: tomar fecha de subasta desde la card (si viene en el listado)
+              const auctionIso =
+                it?.auctionDate ||
+                it?.auction_date ||
+                it?.auction?.auction_date ||
+                it?.auction?.auctionDate ||
+                ''
+
+              // (Solo para UI)
+              const auctionText = (() => {
+                if (!auctionIso) return ''
+                try {
+                  const d = new Date(auctionIso)
+                  if (!isNaN(d)) return d.toLocaleString('es-AR')
+                } catch {}
+                return String(auctionIso)
+              })()
+
               return (
                 <button
                   key={it.id}
-                  onClick={()=>navigate(`/admin/obra/${it.id}`)}
+                  onClick={()=>{
+                    console.log('[AdminDashboard][NAV] to review', { id: it.id, auctionIso })
+                    navigate(`/admin/obra/${it.id}`, { state: { auctionDate: auctionIso } })
+                  }}
                   className="text-left overflow-hidden rounded-3xl border border-slate-200 bg-white/70 hover:shadow transition"
                   title="Ver detalle y aprobar"
                 >
@@ -193,11 +211,17 @@ export default function AdminDashboard(){
                           : '—'}
                       </div>
 
-                      {/* Badge opcional: confirma que NO es venta directa */}
                       <span className="rounded-full px-2 py-0.5 text-[11px] bg-indigo-100 text-indigo-700">
                         Tokenizada
                       </span>
                     </div>
+
+                    {/* ✅ NUEVO: mostrar fecha de subasta si viene */}
+                    {auctionIso ? (
+                      <div className="text-xs text-slate-600">
+                        <strong>Subasta:</strong> {auctionText}
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               )
