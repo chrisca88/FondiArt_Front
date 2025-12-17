@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import Info from './Info.jsx'
 import FAQ from './FAQ.jsx'
+import fondiartLogo from '../assets/fondiart-logo.png'
 
 export default function Home(){
   const heroImg = "https://images.unsplash.com/photo-1526318472351-c75fcf070305?q=80&w=1200&auto=format&fit=crop"
@@ -49,9 +50,12 @@ export default function Home(){
         <div className="w-full">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-center">
             <div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight">
-                Fondi<span className="text-indigo-600">Art</span>
-              </h1>
+              <img
+                src={fondiartLogo}
+                alt="FondiArt"
+                className="h-12 sm:h-14 lg:h-16 w-auto object-contain"
+                loading="eager"
+              />
               <p className="mt-4 text-lg text-slate-600 max-w-xl">
                 Conectamos artistas e inversores. Comprá fracciones de obras o publicá tus obras si sos artista.
               </p>
