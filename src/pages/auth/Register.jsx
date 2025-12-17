@@ -80,7 +80,7 @@ export default function Register(){
           <div className="absolute -inset-4 -z-10 rounded-3xl bg-gradient-to-tr from-indigo-200 via-purple-200 to-pink-200 blur-2xl opacity-70"></div>
           <div className="card-surface p-10 flex flex-col justify-center">
             <h2 className="text-4xl font-extrabold tracking-tight">
-              Crear cuenta en Fondi <span className="text-indigo-600">Art</span>
+              Crear cuenta en Fondi<span className="text-indigo-600">Art</span>
             </h2>
             <p className="mt-4 text-slate-600 leading-relaxed">
               Unite como <strong>comprador/a</strong> o <strong>artista</strong> para acceder a tu panel,
