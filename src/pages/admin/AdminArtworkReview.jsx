@@ -17,6 +17,10 @@ export default function AdminArtworkReview(){
   const [idx, setIdx] = useState(0)
   const [contractAddress, setContractAddress] = useState(null)
 
+  // ✅ NUEVO: traer todas las subastas una sola vez
+  const [allAuctions, setAllAuctions] = useState([])
+  const [auctionsError, setAuctionsError] = useState(null)
+
   // precio base editable por el admin
   const [basePrice, setBasePrice] = useState(0)
   // fecha de subasta
@@ -30,6 +34,56 @@ export default function AdminArtworkReview(){
   // MODAL éxito
   const [successOpen, setSuccessOpen] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+
+  // ✅ NUEVO: useEffect para traer /auctions/ (tal como pediste)
+  useEffect(()=>{
+    let alive = true
+    setAuctionsError(null)
+    api.get('/auctions/').then(res=>{
+      if(!alive) return
+      const payload = res?.data
+      const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
+      setAllAuctions(list || [])
+    }).catch(err => {
+      if(!alive) return
+      console.error("Error fetching auctions:", err)
+      setAuctionsError('No se pudieron cargar las subastas.')
+    })
+    return ()=>{ alive=false }
+  }, [])
+
+  // helper: normaliza ISO -> YYYY-MM-DD
+  const normalizeToInputDate = (raw) => (
+    (typeof raw === 'string' && raw) ? raw.slice(0, 10) : ''
+  )
+
+  // helper: encuentra subasta por nombre/título de la obra dentro del listado
+  function pickAuctionByArtworkTitle(list, artworkTitle) {
+    if (!Array.isArray(list) || !list.length || !artworkTitle) return null
+
+    const norm = (s) => String(s || '').trim().toLowerCase()
+    const target = norm(artworkTitle)
+
+    const getTitleFromAuction = (a) =>
+      a?.artwork_title ??
+      a?.artworkTitle ??
+      a?.artwork_name ??
+      a?.artworkName ??
+      a?.artwork?.title ??
+      a?.artwork?.name ??
+      a?.artwork ??
+      ''
+
+    const matches = list.filter(a => norm(getTitleFromAuction(a)) === target)
+
+    // Preferimos upcoming si existe; si no, primera coincidencia
+    const picked =
+      matches.find(a => a?.status === 'upcoming') ||
+      matches[0] ||
+      null
+
+    return picked
+  }
 
   useEffect(()=>{
     let alive = true
@@ -55,44 +109,34 @@ export default function AdminArtworkReview(){
         item?.auction_date ??
         ''
 
-      let normalizedAuctionDate =
-        (typeof rawAuction === 'string' && rawAuction)
-          ? rawAuction.slice(0, 10) // sirve tanto si viene "YYYY-MM-DD" como si viene ISO
-          : ''
+      let normalizedAuctionDate = normalizeToInputDate(rawAuction)
 
-      // ✅ CAMBIO SOLICITADO:
-      // Si la obra NO trae fecha, consultamos /auctions/?artwork=<id> para obtener auction_date
+      // ✅ CAMBIO SOLICITADO (NUEVO ENFOQUE):
+      // Si la obra NO trae fecha, NO buscamos por id.
+      // Usamos /auctions/ (ya traído en allAuctions) y matcheamos por nombre/título de la obra.
       if (!normalizedAuctionDate) {
         try {
-          console.log('[AdminArtworkReview][FETCH][AUCTIONS] trying /auctions/?artwork=', id)
+          const picked = pickAuctionByArtworkTitle(allAuctions, item?.title)
+          const rawFromAuction = picked?.auction_date ?? picked?.auctionDate ?? ''
 
-          const aRes = await api.get(`/auctions/?artwork=${id}`)
-          const payload = aRes?.data
-          const list = Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload) ? payload : [])
-
-          console.log('[AdminArtworkReview][FETCH][AUCTIONS] raw payload keys=', payload ? Object.keys(payload) : '(null)')
-          console.log('[AdminArtworkReview][FETCH][AUCTIONS] count=', list.length)
-
-          // Elegimos la subasta "upcoming" si existe; si no, la primera
-          const picked = list.find(a => a?.status === 'upcoming') || list[0] || null
-          const rawFromAuction = picked?.auction_date
-
-          console.log('[AdminArtworkReview][FETCH][AUCTIONS] picked=', {
+          console.log('[AdminArtworkReview][FETCH][AUCTIONS] matching by artwork title=', item?.title)
+          console.log('[AdminArtworkReview][FETCH][AUCTIONS] picked=', picked ? {
             id: picked?.id,
             status: picked?.status,
-            auction_date: rawFromAuction
-          })
+            auction_date: rawFromAuction,
+            artwork_title:
+              picked?.artwork_title ??
+              picked?.artworkTitle ??
+              picked?.artwork_name ??
+              picked?.artworkName ??
+              picked?.artwork?.title ??
+              picked?.artwork?.name ??
+              picked?.artwork
+          } : null)
 
-          if (rawFromAuction && typeof rawFromAuction === 'string') {
-            // Normalizamos a YYYY-MM-DD para el input date
-            normalizedAuctionDate = rawFromAuction.slice(0, 10)
-          }
+          normalizedAuctionDate = normalizeToInputDate(rawFromAuction)
         } catch (e) {
-          console.warn(
-            '[AdminArtworkReview][FETCH][AUCTIONS] failed:',
-            e?.response?.status,
-            e?.message
-          )
+          console.warn('[AdminArtworkReview][FETCH][AUCTIONS] failed:', e?.response?.status, e?.message)
         }
       }
 
@@ -110,7 +154,7 @@ export default function AdminArtworkReview(){
       setErr(e.message || 'No se pudo cargar la obra'); setLoading(false)
     })
     return ()=>{ alive = false }
-  }, [id])
+  }, [id, allAuctions])
 
   const isPending = useMemo(()=> data && (data.status === 'Pending'), [data])
   const unit = useMemo(() => Number(((Number(basePrice)||0) / FRACTIONS_TOTAL).toFixed(2)), [basePrice])
@@ -447,6 +491,9 @@ export default function AdminArtworkReview(){
                 )}
               </li>
             </ul>
+
+            {/* (Opcional) log silencioso: si falló traer subastas */}
+            {auctionsError ? <p className="mt-3 text-xs text-amber-600">{auctionsError}</p> : null}
           </div>
         </div>
       </div>
