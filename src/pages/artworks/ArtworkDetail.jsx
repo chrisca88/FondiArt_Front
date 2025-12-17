@@ -478,6 +478,26 @@ export default function ArtworkDetail() {
     }
   }
 
+  // ✅ NUEVO: compartir -> copiar URL actual al portapapeles
+  const handleShare = async () => {
+    const url = window.location.href
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = url
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'absolute'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      } catch {}
+    }
+  }
+
   return (
     <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-white to-slate-50">
       <div className="section-frame py-8 space-y-6">
@@ -610,7 +630,9 @@ export default function ArtworkDetail() {
                   {isSold ? 'Obra vendida' : (isDirect ? 'Comprar' : (isAuctioned ? 'Obra subastada' : 'Comprar fracción'))}
                 </button>
 
-                <button className="btn btn-outline" title="Compartir"><Share className="h-4 w-4" /></button>
+                <button className="btn btn-outline" title="Compartir" onClick={handleShare}>
+                  <Share className="h-4 w-4" />
+                </button>
               </div>
             </div>
           </aside>
